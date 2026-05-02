@@ -371,6 +371,257 @@ body.shake-rgb canvas#game{ filter: hue-rotate(8deg) saturate(1.15); }
 .screen.hidden{ display:none; }
 @keyframes fadeScreen { from { opacity: 0; backdrop-filter: blur(0); } to { opacity: 1; } }
 
+/* ================================================================
+   TITLE SCREEN — mobile-first, game-as-background, inline upgrades
+   ================================================================ */
+.title-screen{
+  background:
+    linear-gradient(180deg, rgba(15,4,24,.32) 0%, rgba(15,4,24,.22) 35%, rgba(15,4,24,.55) 90%);
+  backdrop-filter: blur(2px) saturate(120%);
+  -webkit-backdrop-filter: blur(2px) saturate(120%);
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr auto;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+}
+.title-screen > *{ min-width: 0; max-width: 100%; }
+
+.t-top{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: max(env(safe-area-inset-top), 16px) 18px 0;
+  z-index: 2;
+}
+.t-brand{
+  font-family: var(--display); font-style: italic; font-weight: 700;
+  font-size: 24px; line-height: 1; letter-spacing: -0.018em;
+  color: var(--ink);
+  text-shadow: 0 1px 14px rgba(0,0,0,.5);
+}
+.t-brand em{ font-style: normal; color: var(--gold); text-shadow: 0 0 14px rgba(255,214,107,.7); }
+.coin-pill{
+  display:inline-flex; align-items:center; gap: 6px;
+  background: rgba(15,4,24,.55);
+  border: 1px solid rgba(255,214,107,.25);
+  border-radius: 999px;
+  padding: 6px 14px 6px 10px;
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  color: var(--gold);
+  letter-spacing: .14em;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  text-shadow: 0 0 8px rgba(255,214,107,.4);
+}
+
+.t-hero{
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap: 14px;
+  padding: 12px 22px;
+  text-align: center;
+}
+.t-hero .eyebrow{ margin: 0 0 -4px; }
+.t-hero .logo{ font-size: clamp(78px, 19vw, 142px); margin: 0; }
+.t-best{
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: .42em; color: var(--ink-3);
+  text-transform: uppercase;
+  margin-top: -4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Big tap-friendly PLAY pill */
+.btn-play{
+  appearance:none; -webkit-appearance:none;
+  background: var(--gold);
+  color: #2A1E04;
+  border: none;
+  border-radius: 999px;
+  padding: 18px 32px;
+  font-family: var(--body);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: .4em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display:inline-flex; align-items:center; justify-content:center; gap: 12px;
+  box-shadow:
+    0 14px 38px rgba(255,214,107,.45),
+    0 0 0 1px rgba(255,255,255,.18) inset,
+    0 -2px 0 0 rgba(212,135,58,.3) inset;
+  margin-top: 6px;
+  transition: transform .12s cubic-bezier(.34,1.56,.64,1), box-shadow .2s;
+  min-width: 220px;
+  animation: playBreathe 3.4s ease-in-out infinite;
+}
+@keyframes playBreathe {
+  0%,100% { box-shadow: 0 14px 38px rgba(255,214,107,.45), 0 0 0 1px rgba(255,255,255,.18) inset, 0 -2px 0 0 rgba(212,135,58,.3) inset; }
+  50%     { box-shadow: 0 18px 50px rgba(255,214,107,.65), 0 0 0 1px rgba(255,255,255,.22) inset, 0 -2px 0 0 rgba(212,135,58,.3) inset; }
+}
+.btn-play:active{ transform: scale(.97); }
+.btn-play .play-l{ position: relative; top: 1px; }
+
+.t-mini-row{
+  display:flex; gap: 10px;
+  margin-top: 4px;
+}
+.btn-mini{
+  appearance:none; -webkit-appearance:none;
+  background: rgba(15,4,24,.55);
+  border: 1px solid rgba(255,255,255,.12);
+  color: var(--ink);
+  border-radius: 14px;
+  padding: 10px 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  display:flex; flex-direction:column; align-items:center; gap: 1px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: border-color .2s, color .2s;
+  min-width: 96px;
+}
+.btn-mini .ml{ font-weight: 600; }
+.btn-mini .mt{ font-family: var(--mono); font-size: 9px; color: var(--ink-3); letter-spacing: .3em; }
+.btn-mini:active{ transform: scale(.97); }
+
+/* ── INLINE UPGRADES STRIP ── */
+.t-upgrades{
+  padding: 8px 0 max(env(safe-area-inset-bottom), 14px);
+  z-index: 2;
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(15,4,24,.42) 22%, rgba(15,4,24,.62) 100%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.t-up-head{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 8px 22px 6px;
+}
+.t-up-l{
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: .42em; color: var(--gold);
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255,214,107,.4);
+}
+.t-up-hint{
+  font-family: var(--mono); font-size: 9px;
+  letter-spacing: .3em; color: var(--ink-3);
+  text-transform: uppercase;
+}
+.up-strip{
+  display:flex; gap: 10px;
+  padding: 6px 18px 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.up-strip::-webkit-scrollbar{ display: none; }
+.up-card{
+  flex: 0 0 168px;
+  scroll-snap-align: start;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,214,107,.18);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display:flex; flex-direction:column; gap: 6px;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: border-color .2s, transform .12s, box-shadow .2s;
+  min-height: 120px;
+}
+.up-card:active{ transform: scale(.98); }
+.up-card.affordable{
+  border-color: var(--gold);
+  box-shadow: 0 8px 22px rgba(255,214,107,.16);
+}
+.up-card.maxed{
+  border-color: var(--mint);
+  background: rgba(130,255,177,.05);
+}
+.up-card.locked{
+  opacity: .55;
+}
+.up-card .name{
+  font-family: var(--display); font-style: italic; font-weight: 700;
+  font-size: 16px; line-height: 1.05; color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.up-card .desc{
+  font-family: var(--body);
+  font-size: 11px; line-height: 1.4; color: var(--ink-2);
+}
+.up-card .lvl-row{
+  display:flex; gap: 4px; align-items:center;
+  margin-top: auto;
+}
+.up-card .lvl-dot{
+  width: 7px; height: 7px; border-radius: 999px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.18);
+}
+.up-card .lvl-dot.on{
+  background: var(--gold);
+  border-color: var(--gold);
+  box-shadow: 0 0 6px rgba(255,214,107,.6);
+}
+.up-card .cost-row{
+  display:flex; align-items:center; justify-content: space-between;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.up-card .cost{
+  font-family: var(--mono); font-size: 13px; font-weight: 600;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+  display:flex; align-items:center; gap: 4px;
+  letter-spacing: .04em;
+}
+.up-card.locked .cost{ color: var(--ink-3); }
+.up-card.maxed .cost{ color: var(--mint); }
+.up-card .pip-tiny{
+  width: 9px; height: 9px;
+  background: radial-gradient(circle at 30% 30%, #FFE99A, #FFD66B 55%, #C58A2A);
+  border-radius: 999px;
+  border: 1px solid rgba(212,135,58,.7);
+  box-shadow: 0 0 6px rgba(255,214,107,.5);
+}
+.up-card .lvl-l{
+  font-family: var(--mono); font-size: 9px;
+  letter-spacing: .26em; color: var(--ink-3);
+  text-transform: uppercase;
+  margin-left: 6px;
+}
+
+/* Wider screens: more breathing room */
+@media (min-width: 720px){
+  .t-brand{ font-size: 28px; }
+  .t-hero{ padding: 32px 24px; }
+  .btn-play{ padding: 22px 44px; font-size: 16px; min-width: 280px; }
+  .up-strip{ padding: 10px 26px 18px; gap: 14px; }
+  .up-card{ flex: 0 0 200px; padding: 14px 16px; min-height: 140px; }
+  .up-card .name{ font-size: 18px; }
+  .up-card .desc{ font-size: 12px; }
+  .t-up-head{ padding: 10px 26px 8px; }
+}
+
+/* Landscape phones — keep things tight vertically */
+@media (max-height: 560px) and (orientation: landscape){
+  .t-hero .logo{ font-size: clamp(54px, 14vw, 90px); }
+  .t-hero{ gap: 8px; padding: 8px 22px; }
+  .btn-play{ padding: 14px 28px; }
+  .up-strip{ padding: 4px 18px 8px; }
+  .up-card{ min-height: 100px; padding: 10px 12px; }
+}
+
 /* Shared title-zone (logo + tagline + menu) */
 .title-zone{ display:flex; flex-direction:column; align-items:center; max-width: 100%; }
 .eyebrow{
@@ -786,33 +1037,36 @@ body.shake-rgb canvas#game{ filter: hue-rotate(8deg) saturate(1.15); }
 
 <div class="pause-hint hidden" id="pauseHint">PAUSE · ESC</div>
 
-<!-- TITLE -->
-<div class="screen" id="titleScreen">
-  <div class="title-zone">
+<!-- TITLE — single full-bleed screen with inline upgrades -->
+<div class="screen title-screen" id="titleScreen">
+  <!-- Top bar: brand mark + coin balance pill -->
+  <div class="t-top">
+    <div class="t-brand">Glide<em>.</em></div>
+    <div class="coin-pill"><span class="coin-pip"></span><span id="titleCoins">0</span></div>
+  </div>
+
+  <!-- Hero block -->
+  <div class="t-hero">
     <div class="eyebrow">ENDLESS HILL GLIDE</div>
     <div class="logo">Glide<span class="dot">.</span></div>
-    <p class="tagline"><em>Hold</em> to dive into hill slopes.<br><em>Release</em> at the bottom to <em>launch</em>.<br>Build frenzy. Don't slow down.</p>
-    <div class="menu-rows">
-      <button class="btn primary" id="playBtn">PLAY <span class="b-tag" id="bestSubtitle">BEST 0</span></button>
-      <div class="btn-row">
-        <button class="btn" id="dailyBtn">DAILY <span class="b-tag" id="dailyTag">#000</span></button>
-        <button class="btn" id="shopBtn">SHOP <span class="b-tag" id="shopTag">0</span></button>
-      </div>
-      <button class="btn" id="howBtn" style="font-size:11px;letter-spacing:.4em;padding:12px 20px;">HOW TO PLAY</button>
+    <div class="t-best"><span id="bestSubtitle">BEST 0</span></div>
+    <button class="btn-play" id="playBtn">
+      <span class="play-l">TAP TO PLAY</span>
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 4 20 12 6 20" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <div class="t-mini-row">
+      <button class="btn-mini" id="dailyBtn"><span class="ml">DAILY</span><span class="mt" id="dailyTag">#000</span></button>
+      <button class="btn-mini" id="howBtn"><span class="ml">HOW</span><span class="mt">PLAY</span></button>
     </div>
   </div>
-</div>
 
-<!-- SHOP -->
-<div class="screen hidden" id="shopScreen">
-  <div class="title-zone shop-zone">
-    <div class="eyebrow">UPGRADES &amp; GEAR</div>
-    <div class="logo" style="font-size: clamp(54px, 14vw, 96px)">Shop<span class="dot">.</span></div>
-    <div class="coin-balance"><span class="coin-pip big"></span><span id="shopCoins">0</span> <span class="coin-l">COINS</span></div>
-    <div class="shop-grid" id="shopGrid"></div>
-    <div class="menu-rows" style="max-width: 240px; margin-top: 18px">
-      <button class="btn primary" id="shopBack">BACK</button>
+  <!-- Inline upgrades strip — horizontal scroll on mobile -->
+  <div class="t-upgrades">
+    <div class="t-up-head">
+      <span class="t-up-l">UPGRADES</span>
+      <span class="t-up-hint">tap to buy</span>
     </div>
+    <div class="up-strip" id="upStrip"></div>
   </div>
 </div>
 
@@ -2942,26 +3196,29 @@ function bindInput(){
     ring.classList.remove('go');
   }
 
-  // Bind on the WHOLE WINDOW so clicks anywhere (even on overlays with pointer-events:none) register.
-  // The screens (title/how/gameover) themselves have pointer-events:auto so they intercept clicks first.
+  // Click filter: skip game input only if the user actually tapped a button/card/control, not the screen background.
+  function isControl(el){
+    if (!el) return false;
+    return !!el.closest('button, .up-card, .snd, .pause-hint, .coin-pill');
+  }
+
   window.addEventListener('pointerdown', (e) => {
+    if (isControl(e.target)) return;
     e.preventDefault?.();
     pressOn(e.clientX, e.clientY);
   }, { passive:false });
-  window.addEventListener('pointerup',     (e) => { e.preventDefault?.(); pressOff(); }, { passive:false });
+  window.addEventListener('pointerup',     (e) => { if (isControl(e.target)) return; e.preventDefault?.(); pressOff(); }, { passive:false });
   window.addEventListener('pointercancel', () => pressOff());
   window.addEventListener('pointerleave',  () => pressOff());
-  // Touch fallback for older browsers that don't dispatch pointer events on touch
   window.addEventListener('touchstart', (e) => {
-    if (e.target && (e.target.closest('button') || e.target.closest('.screen') || e.target.closest('.snd') || e.target.closest('.pause-hint'))) return;
+    if (isControl(e.target)) return;
     e.preventDefault();
     const t = e.touches[0]; if (t) pressOn(t.clientX, t.clientY);
   }, { passive:false });
-  window.addEventListener('touchend',    (e) => { e.preventDefault?.(); pressOff(); }, { passive:false });
+  window.addEventListener('touchend',    (e) => { if (isControl(e.target)) return; e.preventDefault?.(); pressOff(); }, { passive:false });
   window.addEventListener('touchcancel', () => pressOff());
-  // Mouse fallback (some kiosk browsers don't fire pointer events at all)
   window.addEventListener('mousedown', (e) => {
-    if (e.target && (e.target.closest('button') || e.target.closest('.screen'))) return;
+    if (isControl(e.target)) return;
     pressOn(e.clientX, e.clientY);
   });
   window.addEventListener('mouseup', () => pressOff());
@@ -2984,9 +3241,7 @@ function bindInput(){
   $('#playBtn').onclick   = () => { A.init(); A.resume(); newRun({ daily:false, demo:false }); };
   $('#dailyBtn').onclick  = () => { A.init(); A.resume(); newRun({ daily:true,  demo:false }); };
   $('#howBtn').onclick    = () => showScreen('#howScreen');
-  $('#howBack').onclick   = () => showScreen('#titleScreen');
-  $('#shopBtn').onclick   = openShop;
-  $('#shopBack').onclick  = () => { showScreen('#titleScreen'); refreshMenu(); };
+  $('#howBack').onclick   = () => { showScreen('#titleScreen'); refreshMenu(); };
   $('#againBtn').onclick  = () => newRun({ daily: G.daily, demo:false });
   $('#menuBtn').onclick   = () => { showScreen('#titleScreen'); refreshMenu(); newRun({ demo:true }); };
   $('#shareBtn').onclick  = onShare;
@@ -3016,43 +3271,42 @@ function refreshMenu(){
   $('#bestSubtitle').textContent = 'BEST ' + formatNumber(store.best);
   const k = String(todaySeed());
   const done = !!store.daily[k];
-  $('#dailyTag').textContent = done ? `#${dayNumber()} · ${formatNumber(store.daily[k].score)}` : `#${dayNumber()}`;
-  $('#shopTag').textContent = formatNumber(store.totalCoins);
+  $('#dailyTag').textContent = done ? `#${dayNumber()}` : `#${dayNumber()}`;
+  $('#titleCoins').textContent = formatNumber(store.totalCoins);
+  renderUpStrip();
 }
 
-/* ─────  SHOP RENDERING + BUY FLOW  ───── */
-function openShop(){
-  renderShop();
-  showScreen('#shopScreen');
-}
-function renderShop(){
-  $('#shopCoins').textContent = formatNumber(store.totalCoins);
-  const grid = $('#shopGrid');
-  grid.innerHTML = '';
+/* ─────  INLINE UPGRADES on title screen  ───── */
+function renderUpStrip(){
+  const strip = $('#upStrip');
+  if (!strip) return;
+  strip.innerHTML = '';
   for (const [key, def] of Object.entries(UPGRADES)){
     const lvl = upLevel(key);
     const isMax = lvl >= def.max;
     const cost = isMax ? null : def.costs[lvl];
     const canAfford = !isMax && store.totalCoins >= cost;
     const card = document.createElement('div');
-    card.className = 'shop-card';
+    card.className = 'up-card ' + (isMax ? 'maxed' : (canAfford ? 'affordable' : 'locked'));
     card.innerHTML = `
       <div class="name">${def.name}</div>
       <div class="desc">${def.desc}</div>
       <div class="lvl-row">
         ${Array.from({length: def.max}, (_, i) => `<span class="lvl-dot ${i < lvl ? 'on' : ''}"></span>`).join('')}
-        <span class="lvl-l">LVL ${lvl}/${def.max}</span>
+        <span class="lvl-l">${lvl}/${def.max}</span>
       </div>
-      <button class="buy ${isMax ? 'maxed' : (canAfford ? '' : 'locked')}" data-key="${key}">
-        ${isMax ? 'MAX' : `<span class="coin-pip pip"></span> ${cost}`}
-      </button>
+      <div class="cost-row">
+        <span class="cost">${isMax ? 'MAX' : `<span class="pip-tiny"></span>${cost}`}</span>
+        <span class="lvl-l">${isMax ? '' : (canAfford ? 'TAP' : 'NEED')}</span>
+      </div>
     `;
     if (!isMax && canAfford){
-      card.querySelector('.buy').addEventListener('click', () => buyUpgrade(key));
+      card.addEventListener('click', (e) => { e.stopPropagation(); buyUpgrade(key); });
     }
-    grid.appendChild(card);
+    strip.appendChild(card);
   }
 }
+
 function buyUpgrade(key){
   const def = UPGRADES[key];
   const lvl = upLevel(key);
@@ -3062,10 +3316,11 @@ function buyUpgrade(key){
   store.totalCoins -= cost;
   store.upgrades[key] = lvl + 1;
   persist();
+  A.init(); A.resume();
   A.blip({ freq: 880, freqEnd: 1760, dur: 0.2, type:'triangle', gain: 0.28 });
   setTimeout(() => A.blip({ freq: 1320, dur: 0.12, type:'triangle', gain: 0.22 }), 60);
   flashScreen(0.18);
-  renderShop();
+  if (navigator.vibrate) try { navigator.vibrate(10); } catch {}
   refreshMenu();
 }
 
