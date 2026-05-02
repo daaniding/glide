@@ -1577,7 +1577,10 @@ const G = {
   spinT: 0, spinFrom: 0, lastTapT: -1,
   // coins
   coins: 0,
-  coinsAhead: [],   // floating world-coins
+  coinsAhead: [],
+  // visual: wings/cape extension (0 tucked, 1 extended) + landing squash
+  wingExt: 0,
+  squash: 0,        // 0 → no squash, 1 → max squash, decays
 };
 
 function mulberry32(seed){
@@ -1610,23 +1613,19 @@ function resize(){
   if (G.snowfall.length === 0) seedSnowfall();
 }
 
-/* ─────  TERRAIN ───── */
+/* ─────  TERRAIN — smooth Tiny Wings waves: 1 main + 1 medium + 1 fine  ───── */
 function makeGroundFn(seed){
   const rng = mulberry32(seed);
-  const layers = [];
-  for (let i = 0; i < 5; i++){
-    layers.push({
-      amp:    24 + rng() * 130,
-      freq:   0.0014 + rng() * 0.011,
-      phase:  rng() * TAU,
-    });
-  }
-  // Add occasional big peaks
-  layers.push({ amp: 60, freq: 0.0008, phase: rng() * TAU });
+  // Main long-wavelength wave: the actual hills you ride
+  const main = { amp: 130 + rng() * 60, freq: 0.0028 + rng() * 0.0008, phase: rng() * TAU };
+  // Medium variation: keeps it from being repetitive
+  const med  = { amp: 38 + rng() * 26,  freq: 0.0078 + rng() * 0.0030, phase: rng() * TAU };
+  // Fine surface texture: subtle, doesn't disturb riding
+  const fine = { amp: 10 + rng() * 6,   freq: 0.020  + rng() * 0.012,  phase: rng() * TAU };
   return (x) => {
-    let y = 0;
-    for (const L of layers) y += Math.sin(x * L.freq + L.phase) * L.amp;
-    return y;
+    return Math.sin(x * main.freq + main.phase) * main.amp
+         + Math.sin(x * med.freq  + med.phase ) * med.amp
+         + Math.sin(x * fine.freq + fine.phase) * fine.amp;
   };
 }
 function ground(x){
@@ -1808,22 +1807,26 @@ function seedSnowfall(){
   }
 }
 
-/* ─────  PHYSICS — Tiny Wings rhythm  ─────
-   Hold while sliding DOWN a slope to gain speed, release at the bottom to launch
-   into a smooth arc, land on the next downslope, repeat. Mistime and you bleed speed. */
-const GRAVITY     = 1500;
-const GLIDE_GRAV  = 0.95;          // near-full gravity in air — no perpetual flight
-const DIVE_PULL   = 2200;          // dive press is decisive
-const MAX_VX      = 1200;
-const MIN_VX      = 140;           // mistime hard → really slow
-const START_VX    = 320;
-const DRAG_AIR_PER_SEC  = 0.10;    // very low forward drag — momentum sticks
-const DRAG_VERT_PER_SEC = 0.10;    // very mild vertical drag
-const BOUNCE_LOSS = 0.97;          // bird stays glued to the slope
-const ROTATE_SNAP = 8;
-const COYOTE_TIME = 0.20;
+/* ─────  PHYSICS — proper Tiny Wings rhythm  ─────
+   • In air without input: WINGS OUT → ~50% gravity, you arc gracefully (not perpetual flight)
+   • In air with input: WINGS TUCKED → full gravity + dive pull, you plummet
+   • On ground: hug the slope, energy preserved, keep momentum
+   • Land cleanly on a downslope = PERFECT SLIDE (green flash + bonus + frenzy stack) */
+const GRAVITY     = 1450;
+const GLIDE_GRAV  = 0.50;          // wings-out feel — half gravity, you arc smoothly across waves
+const DIVE_PULL   = 2400;          // pressing = full plummet
+const MAX_VX      = 1240;
+const MIN_VX      = 140;
+const START_VX    = 360;
+const DRAG_AIR_PER_SEC  = 0.08;    // momentum lasts
+const DRAG_VERT_PER_SEC = 0.16;    // mild vertical drag during glide
+const BOUNCE_LOSS = 0.985;         // very sticky to slope — no jagged bounces on small bumps
+const ROTATE_SNAP = 9;
+const COYOTE_TIME = 0.22;
 const PERFECT_SPEED_MIN = 280;
 const PERFECT_SLOPE     = -0.10;
+const SLIDE_SLOPE       = -0.18;   // slope angle considered a downslope for "perfect slide" landings
+const SLIDE_VY_MIN      = 280;     // need real downward velocity to count as a clean perfect slide
 
 function update(realDt){
   // Smooth time scale
@@ -1914,16 +1917,24 @@ function update(realDt){
       G.running = false;
     }
 
-    // Landing thud
-    if (Math.abs(hitVy) > 220 && !G.prevGroundContact){
+    // Landing thud + PERFECT SLIDE detection
+    if (Math.abs(hitVy) > 200 && !G.prevGroundContact){
       const intensity = Math.min(1.4, Math.abs(hitVy)/600);
       kickShake(Math.min(22, Math.abs(hitVy) / 70));
-      spawnSnowPlume(G.px, gy, hitVy);
+      G.squash = Math.min(1, intensity);
       A.thud(intensity);
       addShockwave(G.px, gy, 60 + Math.abs(hitVy) * 0.06);
 
-      // Bank air combo bonus on soft landing
-      if (G.airTimeBest > 0.6 && hitVy < 900){
+      // PERFECT SLIDE: landing into a clean downslope with real downward velocity = THE Tiny Wings moment
+      const isPerfectSlide = !G.demo && slope < SLIDE_SLOPE && hitVy > SLIDE_VY_MIN && G.airTime > 0.35;
+      if (isPerfectSlide){
+        triggerPerfectSlide(slope, hitVy);
+      } else {
+        spawnSnowPlume(G.px, gy, hitVy);
+      }
+
+      // Bank air combo bonus on soft landing (only if no perfect slide already paid out)
+      if (!isPerfectSlide && G.airTimeBest > 0.6 && hitVy < 900){
         const airBonus = Math.round(20 + G.airTimeBest * 32);
         addScore(airBonus * G.scoreMult);
         spawnFloatScore(`+${airBonus * G.scoreMult} AIR`, G.px, G.py - 30, '#FFD66B');
@@ -1956,8 +1967,14 @@ function update(realDt){
   // Rotation tracks velocity vector
   const tgtRot = Math.atan2(G.vy, Math.max(40, G.vx));
   G.rot += (tgtRot - G.rot) * Math.min(1, dt * ROTATE_SNAP);
-  // Scarf has more inertia than body
   G.scarfRot += (G.rot - G.scarfRot) * Math.min(1, dt * 4);
+
+  // Wings out when in air & not pressed; tucked when pressed or grounded
+  const wingTarget = (!G.groundContact && !G.pressed) ? 1 : 0;
+  G.wingExt += (wingTarget - G.wingExt) * Math.min(1, realDt * 9);
+
+  // Body squash decays — set on landing impact
+  G.squash *= Math.exp(-7 * realDt);
 
   // Camera (lookahead + zoom out at high speed/frenzy)
   const camSpeedFactor = (G.vx - MIN_VX) / (MAX_VX - MIN_VX);
@@ -2252,6 +2269,56 @@ function triggerPerfect(){
   }
 }
 
+function triggerPerfectSlide(slope, hitVy){
+  G.perf += 1;
+  G.perfStreak += 1;
+  G.coins += 4;
+
+  // Reward speed boost — momentum is preserved + amplified along the slope
+  const slopeBoost = Math.min(180, Math.abs(hitVy) * 0.18);
+  G.vx = Math.min(MAX_VX, G.vx + slopeBoost);
+
+  spawnPerfectSlideBurst(G.px, G.py);
+  showBanner(G.perfStreak >= 3 ? 'FRENZY!' : G.perfStreak === 2 ? 'PERFECT SLIDE' : 'NICE SLIDE',
+             G.perfStreak >= 3 ? 'frenzy huge' : 'cool');
+  flashScreen(0.18, '#82FFB1');                           // GREEN flash, the Tiny Wings signature
+  kickShake(8 + G.perfStreak * 3);
+  addScore(35 + G.perfStreak * 16);
+  A.blip({ freq: 880, freqEnd: 1320, dur: 0.18, type:'triangle', gain: 0.32 });
+  setTimeout(() => A.blip({ freq: 1760, dur: 0.10, type:'triangle', gain: 0.22 }), 70);
+
+  if (G.perfStreak >= 3){
+    G.frenzyT = 4.0;
+    G.frenzyCount += 1;
+    G.scoreMult = upFrenzyMul();
+    G.coins += 10;
+    $('#mult').textContent = '×' + G.scoreMult;
+    $('#mult').classList.add('show', 'frenzy');
+    G.targetTimeScale = 0.22;
+    setTimeout(() => { G.targetTimeScale = 1; }, 180);
+    A.frenzy();
+    burstAber(0.6);
+  }
+}
+
+function spawnPerfectSlideBurst(x, y){
+  // Mint sparkle ring — the signature green confetti of a clean slide
+  for (let i = 0; i < 28; i++){
+    const a = Math.random() * TAU;
+    const sp = 80 + Math.random() * 240;
+    G.particles.push({
+      type:'spark', x, y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 80,
+      life: 0.7 + Math.random() * 0.5,
+      maxLife: 0.9,
+      size: 2 + Math.random() * 2.5,
+      color: 'rgba(130,255,177,',
+      gravity: 80,
+    });
+  }
+  addShockwave(x, y, 90, 'rgba(130,255,177,');
+}
+
 function triggerSpin(){
   G.spinT = 0.55;
   G.spinFrom = G.rot;
@@ -2456,10 +2523,15 @@ function addScore(pts, gold=false){
   flashDelta('+' + pts + (G.scoreMult > 1 ? ' ×'+G.scoreMult : ''), gold);
   pumpScore();
 }
-function flashScreen(intensity){
+function flashScreen(intensity, color){
   const el = $('#flash');
   el.style.transition = 'background 0.04s linear';
-  el.style.background = `rgba(255,255,255,${intensity})`;
+  if (color){
+    const c = hexToRGB(color);
+    el.style.background = `rgba(${c.r},${c.g},${c.b},${intensity})`;
+  } else {
+    el.style.background = `rgba(255,255,255,${intensity})`;
+  }
   setTimeout(() => {
     el.style.transition = 'background 0.35s ease-out';
     el.style.background = 'rgba(255,255,255,0)';
@@ -2596,22 +2668,47 @@ function draw(dt){
   const auroraStrength = clamp(0, 1, 1 - distToNight * 1.6);
   if (auroraStrength > 0.05) drawAurora(ctx, auroraStrength);
 
-  // Sun/moon halo
+  // Sun/moon halo — bigger, with bloom + speed-coupled lens flare
   const sunX = G.W * 0.78 - G.camX * 0.02;
   const sunY = G.H * 0.30 - G.camY * 0.04;
-  const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, G.H * 0.78);
-  sunGrad.addColorStop(0, hexA(pal.glow, 0.7));
-  sunGrad.addColorStop(0.4, hexA(pal.glow, 0.13));
+  const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, G.H * 0.95);
+  sunGrad.addColorStop(0, hexA(pal.glow, 0.85));
+  sunGrad.addColorStop(0.32, hexA(pal.glow, 0.25));
   sunGrad.addColorStop(1, hexA(pal.glow, 0));
   ctx.fillStyle = sunGrad;
   ctx.fillRect(-200, -200, G.W + 400, G.H + 400);
-  // Sun disc
-  ctx.beginPath();
-  ctx.arc(sunX, sunY, 64, 0, TAU);
-  ctx.fillStyle = hexA(pal.glow, 0.97);
-  ctx.fill();
-  // Sun rays (god rays)
+  // Sun rays
   drawSunRays(ctx, sunX, sunY, pal);
+  // Sun disc — bigger + soft inner glow
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, 78, 0, TAU);
+  const discGrad = ctx.createRadialGradient(sunX - 14, sunY - 14, 4, sunX, sunY, 78);
+  discGrad.addColorStop(0, '#FFFFFF');
+  discGrad.addColorStop(0.55, hexA(pal.glow, 1));
+  discGrad.addColorStop(1, hexA(pal.glow, 0.85));
+  ctx.fillStyle = discGrad;
+  ctx.fill();
+
+  // Lens flare orbs along the camera-to-sun line — pop more at speed
+  const flareT = clamp(0, 1, ((G.speedNorm || 0) - 0.2) * 1.8);
+  if (flareT > 0.05){
+    const dx = (G.W * 0.5) - sunX, dy = (G.H * 0.55) - sunY;
+    const flares = [
+      { t: 0.20, r: 22, c: hexA(pal.glow, 0.32 * flareT) },
+      { t: 0.42, r: 12, c: hexA(pal.glow, 0.55 * flareT) },
+      { t: 0.62, r: 28, c: hexA(pal.glow, 0.22 * flareT) },
+      { t: 0.85, r: 14, c: hexA(pal.glow, 0.42 * flareT) },
+    ];
+    for (const f of flares){
+      const fx = sunX + dx * f.t;
+      const fy = sunY + dy * f.t;
+      const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, f.r);
+      g.addColorStop(0, f.c);
+      g.addColorStop(1, hexA(pal.glow, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(fx - f.r, fy - f.r, f.r*2, f.r*2);
+    }
+  }
 
   // Background stars (only at night)
   if (auroraStrength > 0.5) drawBackgroundStars(ctx, pal);
@@ -3181,26 +3278,77 @@ function drawPlayer(ctx, pal){
   }
 }
 
-/* Silhouette boarder — uses the currently equipped skin colors */
+/* Silhouette boarder — uses the currently equipped skin colors,
+   plus an extending kite-cape (glide pose) and landing squash */
 function drawBoarder(ctx, x, y, rot, isGhost, skinOverride){
   const skin = skinOverride || activeBoard();
+  const wingExt = isGhost ? 0 : (G.wingExt || 0);
+  const squash  = isGhost ? 0 : (G.squash  || 0);
+
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rot);
-  ctx.scale(1.5, 1.5);
+  // Squash: stretch horizontally, compress vertically on landing
+  const sx = 1.5 * (1 + squash * 0.18);
+  const sy = 1.5 * (1 - squash * 0.22);
+  ctx.scale(sx, sy);
 
   // Soft shadow disc
   if (!isGhost){
     ctx.beginPath();
-    ctx.ellipse(0, 16, 26, 4, 0, 0, TAU);
-    ctx.fillStyle = 'rgba(20,8,40,.28)';
+    ctx.ellipse(0, 16, 26 + squash * 8, 4, 0, 0, TAU);
+    ctx.fillStyle = 'rgba(20,8,40,.32)';
     ctx.fill();
+  }
+
+  // Halo aura for high speed / frenzy / glow skins
+  if (!isGhost){
+    const speed = G.speedNorm || 0;
+    const auraStrength = clamp(0, 1, (speed - 0.4) * 1.6) + (G.frenzyT > 0 ? 0.4 : 0) + (skin.halo ? 0.2 : 0);
+    if (auraStrength > 0.05){
+      const auraRGB = hexToRGB(G.frenzyT > 0 ? '#FF6B3F' : skin.scarf);
+      const aGrad = ctx.createRadialGradient(0, -6, 4, 0, -6, 32);
+      aGrad.addColorStop(0, `rgba(${auraRGB.r},${auraRGB.g},${auraRGB.b},${0.32 * auraStrength})`);
+      aGrad.addColorStop(1, `rgba(${auraRGB.r},${auraRGB.g},${auraRGB.b},0)`);
+      ctx.fillStyle = aGrad;
+      ctx.fillRect(-32, -32, 64, 64);
+    }
   }
 
   ctx.globalAlpha = isGhost ? 0.55 : skin.alpha;
   const bodyCol = isGhost ? 'rgba(20,8,40,.55)' : skin.body;
 
-  // Halo glow under body for "void" / hot skins
+  // KITE-CAPE — extends behind/above the rider when wings are out, tucks when pressed
+  if (!isGhost && wingExt > 0.04){
+    const k = wingExt;
+    const capeRGB = hexToRGB(G.frenzyT > 0 ? '#FF6B3F' : skin.scarf);
+    // Outer translucent layer
+    ctx.fillStyle = `rgba(${capeRGB.r},${capeRGB.g},${capeRGB.b},${0.28 * k})`;
+    ctx.beginPath();
+    ctx.moveTo(-2, -8);
+    ctx.quadraticCurveTo(-22 - 12 * k, -16 - 18 * k, -28 - 18 * k, -2 - 6 * k);
+    ctx.quadraticCurveTo(-18 - 8 * k, -2, -8, -2);
+    ctx.closePath();
+    ctx.fill();
+    // Inner ribbed layer
+    ctx.strokeStyle = `rgba(${capeRGB.r},${capeRGB.g},${capeRGB.b},${0.55 * k})`;
+    ctx.lineWidth = 1.2;
+    for (let i = 1; i <= 3; i++){
+      const f = i / 3;
+      ctx.beginPath();
+      ctx.moveTo(-2, -8 + f * 4);
+      ctx.quadraticCurveTo(-12 - 8 * k * f, -8 - 10 * k * f, -22 - 14 * k, -4 - 4 * k);
+      ctx.stroke();
+    }
+    // Edge piping
+    ctx.strokeStyle = `rgba(${capeRGB.r},${capeRGB.g},${capeRGB.b},${0.85 * k})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(-2, -8);
+    ctx.quadraticCurveTo(-22 - 12 * k, -16 - 18 * k, -28 - 18 * k, -2 - 6 * k);
+    ctx.stroke();
+  }
+
   if (!isGhost && skin.halo){
     ctx.shadowColor = hexToRgba(skin.scarf, 0.7);
     ctx.shadowBlur = 22;
@@ -3222,7 +3370,7 @@ function drawBoarder(ctx, x, y, rot, isGhost, skinOverride){
     ctx.fillRect(-19, 13.4, 38, 1.4);
   }
 
-  // Body silhouette
+  // Body silhouette — a touch more elegant proportions
   ctx.fillStyle = bodyCol;
   ctx.beginPath();
   ctx.moveTo(-7, 12);
@@ -3236,48 +3384,63 @@ function drawBoarder(ctx, x, y, rot, isGhost, skinOverride){
   ctx.fill();
 
   if (!isGhost){
+    // Front arm — pose changes with wing extension
     ctx.beginPath();
-    ctx.moveTo(8, -12);
-    ctx.quadraticCurveTo(15, -10, 13, -3);
-    ctx.lineTo(10, -3);
-    ctx.lineTo(7, -8);
+    if (wingExt > 0.4){
+      // Extended: arm out to the side
+      ctx.moveTo(8, -12);
+      ctx.quadraticCurveTo(20, -8, 22, 0);
+      ctx.lineTo(18, 1);
+      ctx.lineTo(7, -8);
+    } else {
+      // Tucked: arm close to body
+      ctx.moveTo(8, -12);
+      ctx.quadraticCurveTo(15, -10, 13, -3);
+      ctx.lineTo(10, -3);
+      ctx.lineTo(7, -8);
+    }
     ctx.closePath();
     ctx.fillStyle = bodyCol;
     ctx.fill();
   }
 
-  // Head
+  // Head with bobble
   ctx.beginPath();
-  ctx.arc(3, -22, 7, 0, TAU);
+  ctx.arc(3, -22 - squash * 1.5, 7.4, 0, TAU);
   ctx.fillStyle = bodyCol;
   ctx.fill();
 
   if (!isGhost){
     // Helmet stripe
     ctx.beginPath();
-    ctx.arc(3, -22, 7, Math.PI*1.05, Math.PI*1.95);
-    ctx.lineWidth = 1.8;
+    ctx.arc(3, -22 - squash * 1.5, 7.4, Math.PI*1.05, Math.PI*1.95);
+    ctx.lineWidth = 1.9;
     ctx.strokeStyle = skin.scarf;
     ctx.stroke();
-    // Goggle
+    // Goggle highlight
     ctx.beginPath();
-    ctx.arc(5, -22, 2.4, 0, TAU);
+    ctx.arc(5, -22 - squash * 1.5, 2.6, 0, TAU);
     ctx.fillStyle = G.frenzyT > 0 ? '#FF6B3F' : skin.scarf;
-    if (skin.glow){ ctx.shadowColor = hexToRgba(skin.scarf, 0.9); ctx.shadowBlur = 10; }
+    if (skin.glow){ ctx.shadowColor = hexToRgba(skin.scarf, 0.95); ctx.shadowBlur = 12; }
     ctx.fill();
     ctx.shadowBlur = 0;
+    // Tiny shine pip in the goggle
+    ctx.beginPath();
+    ctx.arc(5.6, -23 - squash * 1.5, 0.9, 0, TAU);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
   }
 
   // Scarf
   if (!isGhost){
     ctx.save();
     ctx.translate(-4, -12);
-    const trail = 6;
+    const trail = 7;
     const baseRGB = hexToRGB(G.frenzyT > 0 ? '#FF6B3F' : skin.scarf);
     for (let i = 0; i < trail; i++){
       const s = (i + 1) / trail;
-      const flap = Math.sin(G.daytime * 6 + i * 0.65) * 3;
-      const w = 16 - i * 2.1;
+      const flap = Math.sin(G.daytime * 6 + i * 0.65) * (3 + 2 * (G.speedNorm || 0));
+      const w = 17 - i * 2.0;
       const h = 3;
       ctx.fillStyle = `rgba(${baseRGB.r},${baseRGB.g},${baseRGB.b},${0.95 - s*0.55})`;
       ctx.beginPath();
@@ -3658,7 +3821,6 @@ function renderBoarderPreview(host, def){
 }
 
 function drawBoarderPreview(ctx, skin){
-  // No board flap (no G.daytime), no goggle frenzy color shift
   ctx.save();
   ctx.globalAlpha = skin.alpha;
   // Shadow
@@ -3666,6 +3828,30 @@ function drawBoarderPreview(ctx, skin){
   ctx.ellipse(0, 16, 26, 4, 0, 0, TAU);
   ctx.fillStyle = 'rgba(20,8,40,.35)';
   ctx.fill();
+
+  // Halo aura
+  const auraRGB = hexToRGB(skin.scarf);
+  const aGrad = ctx.createRadialGradient(0, -6, 4, 0, -6, 32);
+  aGrad.addColorStop(0, `rgba(${auraRGB.r},${auraRGB.g},${auraRGB.b},.22)`);
+  aGrad.addColorStop(1, `rgba(${auraRGB.r},${auraRGB.g},${auraRGB.b},0)`);
+  ctx.fillStyle = aGrad;
+  ctx.fillRect(-32, -32, 64, 64);
+
+  // Cape extended
+  const capeRGB = hexToRGB(skin.scarf);
+  ctx.fillStyle = `rgba(${capeRGB.r},${capeRGB.g},${capeRGB.b},.32)`;
+  ctx.beginPath();
+  ctx.moveTo(-2, -8);
+  ctx.quadraticCurveTo(-32, -32, -44, -8);
+  ctx.quadraticCurveTo(-26, -2, -8, -2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${capeRGB.r},${capeRGB.g},${capeRGB.b},.85)`;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-2, -8);
+  ctx.quadraticCurveTo(-32, -32, -44, -8);
+  ctx.stroke();
   if (skin.halo){
     ctx.shadowColor = hexToRgba(skin.scarf, 0.65);
     ctx.shadowBlur = 22;
