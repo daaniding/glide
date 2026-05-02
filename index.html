@@ -489,116 +489,276 @@ body.shake-rgb canvas#game{ filter: hue-rotate(8deg) saturate(1.15); }
 .btn-mini .mt{ font-family: var(--mono); font-size: 9px; color: var(--ink-3); letter-spacing: .3em; }
 .btn-mini:active{ transform: scale(.97); }
 
-/* ── INLINE UPGRADES STRIP ── */
-.t-upgrades{
-  padding: 8px 0 max(env(safe-area-inset-bottom), 14px);
-  z-index: 2;
+/* ================================================================
+   SHOP — full-screen swipe carousel
+   ================================================================ */
+.shop-screen{
   background:
-    linear-gradient(180deg, transparent 0%, rgba(15,4,24,.42) 22%, rgba(15,4,24,.62) 100%);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  border-top: 1px solid rgba(255,255,255,.08);
+    radial-gradient(ellipse 80% 70% at 50% 70%, rgba(15,4,24,.40), transparent 70%),
+    rgba(10,3,22,.74);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto 1fr auto;
+  align-items: stretch;
 }
-.t-up-head{
+.shop-screen > *{ min-width: 0; max-width: 100%; }
+
+.shop-head{
   display:flex; align-items:center; justify-content:space-between;
-  padding: 8px 22px 6px;
+  padding: max(env(safe-area-inset-top), 16px) 18px 14px;
+  gap: 10px;
 }
-.t-up-l{
-  font-family: var(--mono); font-size: 10px;
-  letter-spacing: .42em; color: var(--gold);
+.shop-close{
+  appearance:none; -webkit-appearance:none;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.14);
+  color: var(--ink);
+  width: 42px; height: 42px;
+  border-radius: 999px;
+  display:flex; align-items:center; justify-content:center;
+  cursor: pointer;
+  transition: background .2s, border-color .2s, transform .1s;
+}
+.shop-close:hover, .shop-close:focus-visible{
+  background: rgba(255,214,107,.12); border-color: var(--gold); color: var(--gold);
+  outline: none;
+}
+.shop-close:active{ transform: scale(.94); }
+.shop-title{
+  font-family: var(--display); font-style: italic; font-weight: 700;
+  font-size: 28px; line-height: 1; letter-spacing: -.02em;
+  color: var(--ink);
+  text-shadow: 0 1px 14px rgba(0,0,0,.4);
+}
+.shop-title .dot{ font-style: normal; color: var(--gold); text-shadow: 0 0 16px rgba(255,214,107,.7); }
+
+.shop-tabs{
+  position: relative;
+  display:flex; align-items:stretch; justify-content:center;
+  margin: 0 18px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 999px;
+  padding: 4px;
+  gap: 0;
+}
+.shop-tabs .tab{
+  appearance:none; -webkit-appearance:none;
+  background: transparent;
+  color: var(--ink-3);
+  border: none;
+  flex: 1;
+  padding: 12px 18px;
+  font-family: var(--body); font-weight: 700;
+  font-size: 12px; letter-spacing: .34em;
   text-transform: uppercase;
-  text-shadow: 0 0 10px rgba(255,214,107,.4);
+  cursor: pointer;
+  border-radius: 999px;
+  position: relative; z-index: 1;
+  transition: color .25s;
 }
-.t-up-hint{
-  font-family: var(--mono); font-size: 9px;
-  letter-spacing: .3em; color: var(--ink-3);
-  text-transform: uppercase;
+.shop-tabs .tab.active{ color: #2A1E04; }
+.shop-tabs .tab-bar{
+  position: absolute; top: 4px; bottom: 4px; left: 4px;
+  width: calc(50% - 4px);
+  background: var(--gold);
+  border-radius: 999px;
+  transition: transform .35s cubic-bezier(.34,1.56,.64,1);
+  box-shadow: 0 6px 20px rgba(255,214,107,.35), inset 0 1px 0 rgba(255,255,255,.4);
 }
-.up-strip{
-  display:flex; gap: 10px;
-  padding: 6px 18px 14px;
+
+.rail-wrap{
+  position: relative;
+  overflow: hidden;
+  display:flex; align-items:center;
+  padding: 14px 0;
+}
+.card-rail{
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 100%;
+  gap: 0;
+  width: 100%;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  padding: 8px 18px;
+  scroll-padding: 18px;
 }
-.up-strip::-webkit-scrollbar{ display: none; }
-.up-card{
-  flex: 0 0 168px;
-  scroll-snap-align: start;
-  background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,214,107,.18);
-  border-radius: 16px;
-  padding: 12px 14px;
-  display:flex; flex-direction:column; gap: 6px;
+.card-rail::-webkit-scrollbar{ display: none; }
+
+.big-card{
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  background:
+    linear-gradient(160deg, rgba(255,214,107,.06) 0%, rgba(255,255,255,.03) 50%, rgba(255,111,168,.04) 100%),
+    rgba(15,4,24,.55);
+  border: 1px solid rgba(255,214,107,.22);
+  border-radius: 24px;
+  padding: 22px 22px 24px;
+  display:flex; flex-direction:column; gap: 12px;
   text-align: left;
-  cursor: pointer;
   position: relative;
-  transition: border-color .2s, transform .12s, box-shadow .2s;
-  min-height: 120px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+  height: 100%;
+  margin-right: 12px;
 }
-.up-card:active{ transform: scale(.98); }
-.up-card.affordable{
-  border-color: var(--gold);
-  box-shadow: 0 8px 22px rgba(255,214,107,.16);
+.big-card:last-child{ margin-right: 0; }
+.big-card.equipped{ border-color: var(--mint); background-image: linear-gradient(160deg, rgba(130,255,177,.10) 0%, rgba(255,255,255,.03) 50%, rgba(130,255,177,.06) 100%); }
+.big-card.locked{ opacity: .82; }
+.big-card.maxed{ border-color: var(--mint); }
+
+.bcard-art{
+  position: relative;
+  flex: 1;
+  min-height: 180px;
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 40%, rgba(255,214,107,.18), transparent 65%),
+    linear-gradient(180deg, rgba(255,255,255,.04) 0%, rgba(0,0,0,.18) 100%);
+  border: 1px solid rgba(255,255,255,.06);
+  display:flex; align-items:center; justify-content:center;
+  overflow: hidden;
 }
-.up-card.maxed{
-  border-color: var(--mint);
-  background: rgba(130,255,177,.05);
+.bcard-art canvas{ display: block; }
+.bcard-art .badge{
+  position: absolute; top: 12px; right: 12px;
+  font-family: var(--mono); font-size: 9px;
+  letter-spacing: .32em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.4);
+  color: var(--mint);
+  border: 1px solid rgba(130,255,177,.4);
+  text-transform: uppercase;
 }
-.up-card.locked{
-  opacity: .55;
-}
-.up-card .name{
+.bcard-art .badge.lock{ color: var(--ink-3); border-color: rgba(255,255,255,.12); }
+.bcard-art .badge.locked{ color: var(--rose); border-color: rgba(255,111,168,.4); }
+
+.bcard-name{
   font-family: var(--display); font-style: italic; font-weight: 700;
-  font-size: 16px; line-height: 1.05; color: var(--ink);
-  letter-spacing: -0.01em;
+  font-size: 32px; line-height: .95; color: var(--ink);
+  letter-spacing: -.022em;
 }
-.up-card .desc{
-  font-family: var(--body);
-  font-size: 11px; line-height: 1.4; color: var(--ink-2);
+.bcard-desc{
+  font-family: var(--body); font-size: 14px; line-height: 1.55;
+  color: var(--ink-2);
 }
-.up-card .lvl-row{
-  display:flex; gap: 4px; align-items:center;
-  margin-top: auto;
+.bcard-meta{
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: .32em; color: var(--ink-3);
+  text-transform: uppercase;
 }
-.up-card .lvl-dot{
-  width: 7px; height: 7px; border-radius: 999px;
-  background: rgba(255,255,255,.10);
-  border: 1px solid rgba(255,255,255,.18);
+.bcard-levels{
+  display:flex; align-items:center; gap: 6px;
 }
-.up-card .lvl-dot.on{
+.bcard-levels .lvl-dot{
+  width: 10px; height: 10px; border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.2);
+}
+.bcard-levels .lvl-dot.on{
   background: var(--gold);
   border-color: var(--gold);
-  box-shadow: 0 0 6px rgba(255,214,107,.6);
+  box-shadow: 0 0 8px rgba(255,214,107,.6);
 }
-.up-card .cost-row{
-  display:flex; align-items:center; justify-content: space-between;
-  margin-top: 4px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(255,255,255,.08);
+.bcard-levels .lvl-l{
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: .32em; color: var(--ink-3);
+  margin-left: 8px;
 }
-.up-card .cost{
-  font-family: var(--mono); font-size: 13px; font-weight: 600;
-  color: var(--gold);
-  font-variant-numeric: tabular-nums;
-  display:flex; align-items:center; gap: 4px;
-  letter-spacing: .04em;
-}
-.up-card.locked .cost{ color: var(--ink-3); }
-.up-card.maxed .cost{ color: var(--mint); }
-.up-card .pip-tiny{
-  width: 9px; height: 9px;
-  background: radial-gradient(circle at 30% 30%, #FFE99A, #FFD66B 55%, #C58A2A);
-  border-radius: 999px;
-  border: 1px solid rgba(212,135,58,.7);
-  box-shadow: 0 0 6px rgba(255,214,107,.5);
-}
-.up-card .lvl-l{
-  font-family: var(--mono); font-size: 9px;
-  letter-spacing: .26em; color: var(--ink-3);
+
+.bcard-buy{
+  margin-top: auto;
+  appearance:none; -webkit-appearance:none;
+  background: var(--gold);
+  border: none;
+  color: #2A1E04;
+  border-radius: 16px;
+  padding: 16px 22px;
+  font-family: var(--body); font-weight: 800;
+  font-size: 13px; letter-spacing: .34em;
   text-transform: uppercase;
-  margin-left: 6px;
+  cursor: pointer;
+  display:flex; align-items:center; justify-content:center; gap: 10px;
+  box-shadow: 0 12px 28px rgba(255,214,107,.35), inset 0 1px 0 rgba(255,255,255,.4);
+  transition: transform .12s, background .2s;
+}
+.bcard-buy:hover{ background: #FFE07F; }
+.bcard-buy:active{ transform: scale(.97); }
+.bcard-buy.equipped{
+  background: transparent; color: var(--mint);
+  border: 1px solid var(--mint);
+  box-shadow: none;
+}
+.bcard-buy.equip{
+  background: rgba(255,255,255,.06); color: var(--ink);
+  border: 1px solid rgba(255,255,255,.18);
+  box-shadow: none;
+}
+.bcard-buy.equip:hover{ background: rgba(255,255,255,.10); }
+.bcard-buy.locked{
+  background: transparent; color: var(--ink-3);
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.bcard-buy.locked:hover{ background: transparent; }
+.bcard-buy.maxed{
+  background: transparent; color: var(--mint);
+  border: 1px solid var(--mint);
+  box-shadow: none;
+}
+.bcard-buy .pip{ width: 11px; height: 11px; }
+
+.rail-arrows{
+  position: absolute; inset: 0;
+  display:flex; align-items:center; justify-content:space-between;
+  pointer-events: none;
+  padding: 0 6px;
+}
+.rail-arr{
+  pointer-events: auto;
+  appearance:none; -webkit-appearance:none;
+  background: rgba(15,4,24,.55);
+  border: 1px solid rgba(255,255,255,.18);
+  width: 38px; height: 38px;
+  border-radius: 999px;
+  display:flex; align-items:center; justify-content:center;
+  color: var(--ink-2);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: color .2s, border-color .2s, opacity .2s;
+}
+.rail-arr:hover{ color: var(--gold); border-color: var(--gold); }
+.rail-arr:disabled{ opacity: .25; cursor: default; }
+
+.dots{
+  display:flex; align-items:center; justify-content:center; gap: 8px;
+  padding: 14px 0 max(env(safe-area-inset-bottom), 22px);
+}
+.dots .d{
+  width: 7px; height: 7px; border-radius: 999px;
+  background: rgba(255,255,255,.18);
+  transition: background .25s, transform .25s, width .25s;
+}
+.dots .d.on{
+  background: var(--gold);
+  width: 22px;
+  box-shadow: 0 0 10px rgba(255,214,107,.55);
+}
+
+@media (min-width: 720px){
+  .card-rail{ padding: 8px 26px; scroll-padding: 26px; }
+  .big-card{ padding: 30px 30px 30px; }
+  .bcard-art{ min-height: 240px; }
+  .bcard-name{ font-size: 38px; }
 }
 
 /* Wider screens: more breathing room */
@@ -1037,15 +1197,13 @@ body.shake-rgb canvas#game{ filter: hue-rotate(8deg) saturate(1.15); }
 
 <div class="pause-hint hidden" id="pauseHint">PAUSE · ESC</div>
 
-<!-- TITLE — single full-bleed screen with inline upgrades -->
+<!-- TITLE — clean hero, SHOP opens the carousel -->
 <div class="screen title-screen" id="titleScreen">
-  <!-- Top bar: brand mark + coin balance pill -->
   <div class="t-top">
     <div class="t-brand">Glide<em>.</em></div>
     <div class="coin-pill"><span class="coin-pip"></span><span id="titleCoins">0</span></div>
   </div>
 
-  <!-- Hero block -->
   <div class="t-hero">
     <div class="eyebrow">ENDLESS HILL GLIDE</div>
     <div class="logo">Glide<span class="dot">.</span></div>
@@ -1056,18 +1214,41 @@ body.shake-rgb canvas#game{ filter: hue-rotate(8deg) saturate(1.15); }
     </button>
     <div class="t-mini-row">
       <button class="btn-mini" id="dailyBtn"><span class="ml">DAILY</span><span class="mt" id="dailyTag">#000</span></button>
+      <button class="btn-mini" id="shopBtn"><span class="ml">SHOP</span><span class="mt">SKINS &amp; GEAR</span></button>
       <button class="btn-mini" id="howBtn"><span class="ml">HOW</span><span class="mt">PLAY</span></button>
     </div>
   </div>
+</div>
 
-  <!-- Inline upgrades strip — horizontal scroll on mobile -->
-  <div class="t-upgrades">
-    <div class="t-up-head">
-      <span class="t-up-l">UPGRADES</span>
-      <span class="t-up-hint">tap to buy</span>
-    </div>
-    <div class="up-strip" id="upStrip"></div>
+<!-- SHOP — full-screen swipe carousel with BOARDERS / UPGRADES tabs -->
+<div class="screen shop-screen hidden" id="shopScreen">
+  <div class="shop-head">
+    <button class="shop-close" id="shopClose" aria-label="Sluit shop">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="shop-title">Shop<span class="dot">.</span></div>
+    <div class="coin-pill"><span class="coin-pip"></span><span id="shopBal">0</span></div>
   </div>
+
+  <div class="shop-tabs">
+    <button class="tab active" data-tab="boarders">BOARDERS</button>
+    <button class="tab" data-tab="upgrades">UPGRADES</button>
+    <div class="tab-bar" id="tabBar"></div>
+  </div>
+
+  <div class="rail-wrap">
+    <div class="card-rail" id="cardRail"></div>
+    <div class="rail-arrows">
+      <button class="rail-arr left" id="railLeft" aria-label="Vorige">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button class="rail-arr right" id="railRight" aria-label="Volgende">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="dots" id="cardDots"></div>
 </div>
 
 <!-- HOW -->
@@ -1136,6 +1317,8 @@ const store = {
   totalAir:    persisted.totalAir    || 0,
   totalCoins:  persisted.totalCoins  || 0,
   upgrades:    persisted.upgrades    || { quickStart:0, magnet:0, glideWings:0, boost:0, frenzyKing:0 },
+  boards:      persisted.boards      || ['classic'],
+  activeBoard: persisted.activeBoard || 'classic',
   daily:       persisted.daily       || {},
   sound:       persisted.sound !== false,
 };
@@ -1149,6 +1332,17 @@ const UPGRADES = {
   boost:       { name:'Boost Master', desc:'Boost-rings geven extra forward kick.',  costs:[200, 500, 1000], max:3 },
   frenzyKing:  { name:'Frenzy King',  desc:'Frenzy-multiplier wordt \xD74, \xD75, \xD76.', costs:[300, 700, 1500], max:3 },
 };
+const BOARDERS = {
+  classic: { name:'Classic', desc:'De originele rider met gouden sjaal.',  cost: 0,    body:'#13061F', scarf:'#FFD66B', trail:'rgba(255,238,170,', glow:false, alpha:1 },
+  aurora:  { name:'Aurora',  desc:'Mintgroene gloed door de bergen.',      cost: 250,  body:'#0E2A20', scarf:'#82FFB1', trail:'rgba(130,255,177,', glow:true,  alpha:1 },
+  sunset:  { name:'Sunset',  desc:'Neon-roze schemering achter je.',       cost: 500,  body:'#2A0F1B', scarf:'#FF6FA8', trail:'rgba(255,111,168,', glow:true,  alpha:1 },
+  phoenix: { name:'Phoenix', desc:'Vurige sjaal die door de wind zwiept.', cost: 1000, body:'#2A0E08', scarf:'#FF6B3F', trail:'rgba(255,107,63,',  glow:true,  alpha:1 },
+  ghost:   { name:'Ghost',   desc:'Half-doorzichtige silhouet — wie ben jij?', cost: 1800, body:'#13061F', scarf:'#FFFFFF', trail:'rgba(255,255,255,', glow:false, alpha:0.5 },
+  void:    { name:'Void',    desc:'Pure zwarte silhouet, gouden gloed.',    cost: 3500, body:'#000000', scarf:'#FFD66B', trail:'rgba(255,214,107,', glow:true,  alpha:1, halo:true },
+};
+const owns = (key) => store.boards.includes(key);
+const activeBoard = () => BOARDERS[store.activeBoard] || BOARDERS.classic;
+
 const upLevel = (key) => store.upgrades[key] || 0;
 const upStartVxBonus = () => upLevel('quickStart') * 60;     // +60/lvl
 const upMagnetRadius = () => 60 + upLevel('magnet') * 65;   // base 60, +65/lvl → up to 255
@@ -1614,19 +1808,21 @@ function seedSnowfall(){
   }
 }
 
-/* ─────  PHYSICS — Tiny Wings rhythm: dive on downslope, release at bottom, brief soar  ───── */
+/* ─────  PHYSICS — Tiny Wings rhythm  ─────
+   Hold while sliding DOWN a slope to gain speed, release at the bottom to launch
+   into a smooth arc, land on the next downslope, repeat. Mistime and you bleed speed. */
 const GRAVITY     = 1500;
-const GLIDE_GRAV  = 0.85;          // mostly normal gravity in air — NO perpetual lift, only timing wins
-const DIVE_PULL   = 2100;
-const MAX_VX      = 1180;
-const MIN_VX      = 240;           // slightly lower so you can lose speed if you mistime
-const START_VX    = 360;
-const DRAG_AIR_PER_SEC  = 0.22;    // forward drag (slight bleed unless you keep timing)
-const DRAG_VERT_PER_SEC = 0.18;    // very mild vertical drag (no soar)
-const BOUNCE_LOSS = 0.88;
-const ROTATE_SNAP = 7;
-const COYOTE_TIME = 0.22;
-const PERFECT_SPEED_MIN = 320;
+const GLIDE_GRAV  = 0.95;          // near-full gravity in air — no perpetual flight
+const DIVE_PULL   = 2200;          // dive press is decisive
+const MAX_VX      = 1200;
+const MIN_VX      = 140;           // mistime hard → really slow
+const START_VX    = 320;
+const DRAG_AIR_PER_SEC  = 0.10;    // very low forward drag — momentum sticks
+const DRAG_VERT_PER_SEC = 0.10;    // very mild vertical drag
+const BOUNCE_LOSS = 0.97;          // bird stays glued to the slope
+const ROTATE_SNAP = 8;
+const COYOTE_TIME = 0.20;
+const PERFECT_SPEED_MIN = 280;
 const PERFECT_SLOPE     = -0.10;
 
 function update(realDt){
@@ -2924,17 +3120,19 @@ function drawTrail(ctx){
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
+    const skin = activeBoard();
+    const trailRGBA = G.frenzyT > 0 ? 'rgba(255,107,63,' : skin.trail;
     if (isGlow){
       ctx.lineWidth = G.frenzyT > 0 ? 22 : 14;
-      ctx.strokeStyle = G.frenzyT > 0 ? 'rgba(255,107,63,.18)' : 'rgba(255,214,107,.10)';
+      ctx.strokeStyle = trailRGBA + (G.frenzyT > 0 ? '.18)' : '.12)');
     } else {
       ctx.lineWidth = G.frenzyT > 0 ? 5 : 3;
       const grad = ctx.createLinearGradient(
         G.trail[0].x - G.camX, G.trail[0].y - G.camY,
         G.trail[n-1].x - G.camX, G.trail[n-1].y - G.camY
       );
-      grad.addColorStop(0, 'rgba(255,250,238,0)');
-      grad.addColorStop(1, G.frenzyT > 0 ? 'rgba(255,107,63,.95)' : 'rgba(255,238,170,.85)');
+      grad.addColorStop(0, trailRGBA + '0)');
+      grad.addColorStop(1, trailRGBA + (G.frenzyT > 0 ? '.95)' : '.85)'));
       ctx.strokeStyle = grad;
     }
     ctx.stroke();
@@ -2983,15 +3181,15 @@ function drawPlayer(ctx, pal){
   }
 }
 
-/* Silhouette boarder with flowing gold scarf */
-function drawBoarder(ctx, x, y, rot, isGhost){
+/* Silhouette boarder — uses the currently equipped skin colors */
+function drawBoarder(ctx, x, y, rot, isGhost, skinOverride){
+  const skin = skinOverride || activeBoard();
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rot);
-  // 1.5× the original micro-rig for readability
   ctx.scale(1.5, 1.5);
 
-  // Soft shadow disc beneath board for grounding
+  // Soft shadow disc
   if (!isGhost){
     ctx.beginPath();
     ctx.ellipse(0, 16, 26, 4, 0, 0, TAU);
@@ -2999,8 +3197,17 @@ function drawBoarder(ctx, x, y, rot, isGhost){
     ctx.fill();
   }
 
-  // Board (under feet)
-  ctx.fillStyle = isGhost ? 'rgba(20,8,40,.6)' : '#13061F';
+  ctx.globalAlpha = isGhost ? 0.55 : skin.alpha;
+  const bodyCol = isGhost ? 'rgba(20,8,40,.55)' : skin.body;
+
+  // Halo glow under body for "void" / hot skins
+  if (!isGhost && skin.halo){
+    ctx.shadowColor = hexToRgba(skin.scarf, 0.7);
+    ctx.shadowBlur = 22;
+  }
+
+  // Board
+  ctx.fillStyle = bodyCol;
   ctx.beginPath();
   ctx.moveTo(-22, 11);
   ctx.lineTo(22, 11);
@@ -3009,14 +3216,14 @@ function drawBoarder(ctx, x, y, rot, isGhost){
   ctx.quadraticCurveTo(-30, 14, -22, 11);
   ctx.closePath();
   ctx.fill();
-  // Board accent stripe
+  ctx.shadowBlur = 0;
   if (!isGhost){
-    ctx.fillStyle = '#FFD66B';
+    ctx.fillStyle = skin.scarf;
     ctx.fillRect(-19, 13.4, 38, 1.4);
   }
 
-  // Body silhouette (compact, leaning)
-  ctx.fillStyle = isGhost ? 'rgba(20,8,40,.55)' : '#13061F';
+  // Body silhouette
+  ctx.fillStyle = bodyCol;
   ctx.beginPath();
   ctx.moveTo(-7, 12);
   ctx.lineTo(-10, -3);
@@ -3028,7 +3235,6 @@ function drawBoarder(ctx, x, y, rot, isGhost){
   ctx.closePath();
   ctx.fill();
 
-  // Front arm (slightly raised — silhouette accent)
   if (!isGhost){
     ctx.beginPath();
     ctx.moveTo(8, -12);
@@ -3036,43 +3242,44 @@ function drawBoarder(ctx, x, y, rot, isGhost){
     ctx.lineTo(10, -3);
     ctx.lineTo(7, -8);
     ctx.closePath();
-    ctx.fillStyle = '#13061F';
+    ctx.fillStyle = bodyCol;
     ctx.fill();
   }
 
-  // Head (offset forward slightly)
+  // Head
   ctx.beginPath();
   ctx.arc(3, -22, 7, 0, TAU);
-  ctx.fillStyle = isGhost ? 'rgba(20,8,40,.6)' : '#13061F';
+  ctx.fillStyle = bodyCol;
   ctx.fill();
 
-  // Helmet stripe (gold)
   if (!isGhost){
+    // Helmet stripe
     ctx.beginPath();
     ctx.arc(3, -22, 7, Math.PI*1.05, Math.PI*1.95);
     ctx.lineWidth = 1.8;
-    ctx.strokeStyle = '#FFD66B';
+    ctx.strokeStyle = skin.scarf;
     ctx.stroke();
-    // Goggle highlight
+    // Goggle
     ctx.beginPath();
     ctx.arc(5, -22, 2.4, 0, TAU);
-    ctx.fillStyle = G.frenzyT > 0 ? '#FF6B3F' : '#FFD66B';
+    ctx.fillStyle = G.frenzyT > 0 ? '#FF6B3F' : skin.scarf;
+    if (skin.glow){ ctx.shadowColor = hexToRgba(skin.scarf, 0.9); ctx.shadowBlur = 10; }
     ctx.fill();
+    ctx.shadowBlur = 0;
   }
 
-  // Scarf (flowing behind) — only on main player
+  // Scarf
   if (!isGhost){
     ctx.save();
     ctx.translate(-4, -12);
     const trail = 6;
+    const baseRGB = hexToRGB(G.frenzyT > 0 ? '#FF6B3F' : skin.scarf);
     for (let i = 0; i < trail; i++){
       const s = (i + 1) / trail;
       const flap = Math.sin(G.daytime * 6 + i * 0.65) * 3;
       const w = 16 - i * 2.1;
       const h = 3;
-      ctx.fillStyle = G.frenzyT > 0
-        ? `rgba(255,107,63,${0.95 - s*0.55})`
-        : `rgba(255,214,107,${0.95 - s*0.55})`;
+      ctx.fillStyle = `rgba(${baseRGB.r},${baseRGB.g},${baseRGB.b},${0.95 - s*0.55})`;
       ctx.beginPath();
       ctx.ellipse(-i * 5.5 - 6, flap + i * 1.5, w, h, -0.18, 0, TAU);
       ctx.fill();
@@ -3081,6 +3288,19 @@ function drawBoarder(ctx, x, y, rot, isGhost){
   }
 
   ctx.restore();
+}
+
+function hexToRGB(hex){
+  if (hex.startsWith('rgb')) {
+    const m = hex.match(/\d+/g);
+    return { r: +m[0], g: +m[1], b: +m[2] };
+  }
+  const n = parseInt(hex.slice(1), 16);
+  return { r: (n>>16)&255, g: (n>>8)&255, b: n&255 };
+}
+function hexToRgba(hex, a){
+  const c = hexToRGB(hex);
+  return `rgba(${c.r},${c.g},${c.b},${a})`;
 }
 
 /* Carved snow tracks — small white dashes that fade */
@@ -3242,10 +3462,21 @@ function bindInput(){
   $('#dailyBtn').onclick  = () => { A.init(); A.resume(); newRun({ daily:true,  demo:false }); };
   $('#howBtn').onclick    = () => showScreen('#howScreen');
   $('#howBack').onclick   = () => { showScreen('#titleScreen'); refreshMenu(); };
+  $('#shopBtn').onclick   = openShop;
+  $('#shopClose').onclick = closeShop;
   $('#againBtn').onclick  = () => newRun({ daily: G.daily, demo:false });
   $('#menuBtn').onclick   = () => { showScreen('#titleScreen'); refreshMenu(); newRun({ demo:true }); };
   $('#shareBtn').onclick  = onShare;
   $('#pauseHint').onclick = togglePause;
+  $('#railLeft').onclick  = () => railNudge(-1);
+  $('#railRight').onclick = () => railNudge(1);
+  document.querySelectorAll('.shop-tabs .tab').forEach(t => {
+    t.onclick = () => setShopTab(t.dataset.tab);
+  });
+  $('#cardRail').addEventListener('scroll', () => {
+    cancelAnimationFrame(window.__railRaf);
+    window.__railRaf = requestAnimationFrame(updateDots);
+  });
 
   $('#sndBtn').onclick = () => {
     A.enabled = !A.enabled;
@@ -3273,38 +3504,265 @@ function refreshMenu(){
   const done = !!store.daily[k];
   $('#dailyTag').textContent = done ? `#${dayNumber()}` : `#${dayNumber()}`;
   $('#titleCoins').textContent = formatNumber(store.totalCoins);
-  renderUpStrip();
 }
 
-/* ─────  INLINE UPGRADES on title screen  ───── */
-function renderUpStrip(){
-  const strip = $('#upStrip');
-  if (!strip) return;
-  strip.innerHTML = '';
-  for (const [key, def] of Object.entries(UPGRADES)){
-    const lvl = upLevel(key);
-    const isMax = lvl >= def.max;
-    const cost = isMax ? null : def.costs[lvl];
-    const canAfford = !isMax && store.totalCoins >= cost;
-    const card = document.createElement('div');
-    card.className = 'up-card ' + (isMax ? 'maxed' : (canAfford ? 'affordable' : 'locked'));
-    card.innerHTML = `
-      <div class="name">${def.name}</div>
-      <div class="desc">${def.desc}</div>
-      <div class="lvl-row">
-        ${Array.from({length: def.max}, (_, i) => `<span class="lvl-dot ${i < lvl ? 'on' : ''}"></span>`).join('')}
-        <span class="lvl-l">${lvl}/${def.max}</span>
-      </div>
-      <div class="cost-row">
-        <span class="cost">${isMax ? 'MAX' : `<span class="pip-tiny"></span>${cost}`}</span>
-        <span class="lvl-l">${isMax ? '' : (canAfford ? 'TAP' : 'NEED')}</span>
-      </div>
-    `;
-    if (!isMax && canAfford){
-      card.addEventListener('click', (e) => { e.stopPropagation(); buyUpgrade(key); });
-    }
-    strip.appendChild(card);
+/* ─────  SHOP CAROUSEL  ───── */
+let shopTab = 'boarders';
+
+function openShop(){ shopTab = 'boarders'; renderShop(); showScreen('#shopScreen'); positionTabBar(); }
+function closeShop(){ showScreen('#titleScreen'); refreshMenu(); }
+
+function setShopTab(tab){
+  shopTab = tab;
+  document.querySelectorAll('.shop-tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  positionTabBar();
+  renderShop();
+  $('#cardRail').scrollTo({ left: 0, behavior: 'instant' });
+  setTimeout(updateDots, 50);
+}
+function positionTabBar(){
+  const bar = $('#tabBar');
+  if (!bar) return;
+  bar.style.transform = shopTab === 'boarders' ? 'translateX(0)' : 'translateX(100%)';
+}
+
+function renderShop(){
+  $('#shopBal').textContent = formatNumber(store.totalCoins);
+  const rail = $('#cardRail');
+  rail.innerHTML = '';
+  const items = shopTab === 'boarders' ? Object.entries(BOARDERS) : Object.entries(UPGRADES);
+  items.forEach(([key, def]) => {
+    const card = (shopTab === 'boarders') ? makeBoarderCard(key, def) : makeUpgradeCard(key, def);
+    rail.appendChild(card);
+  });
+  // Dots
+  const dots = $('#cardDots');
+  dots.innerHTML = '';
+  items.forEach((_, i) => {
+    const d = document.createElement('span');
+    d.className = 'd' + (i === 0 ? ' on' : '');
+    dots.appendChild(d);
+  });
+  updateArrows();
+}
+
+function makeBoarderCard(key, def){
+  const isOwned = owns(key);
+  const isActive = store.activeBoard === key;
+  const canAfford = !isOwned && store.totalCoins >= def.cost;
+  const card = document.createElement('div');
+  card.className = 'big-card ' + (isActive ? 'equipped' : (isOwned ? '' : (canAfford ? '' : 'locked')));
+  const badge = isActive ? '<div class="badge">EQUIPPED</div>'
+                          : (isOwned ? '<div class="badge lock" style="color:var(--ink-2);border-color:rgba(255,255,255,.2)">OWNED</div>'
+                                     : (canAfford ? '' : '<div class="badge locked">LOCKED</div>'));
+  card.innerHTML = `
+    <div class="bcard-art" data-skin="${key}">${badge}</div>
+    <div>
+      <div class="bcard-name">${def.name}</div>
+      <div class="bcard-desc">${def.desc}</div>
+    </div>
+    <div class="bcard-meta">${isActive ? 'TAP TO PLAY · BACK TO HOME' : (isOwned ? 'OWNED · TAP EQUIP' : (canAfford ? 'AFFORDABLE' : 'NEED MORE COINS'))}</div>
+    <button class="bcard-buy ${isActive ? 'equipped' : (isOwned ? 'equip' : (canAfford ? '' : 'locked'))}" data-key="${key}">
+      ${isActive ? 'EQUIPPED' : isOwned ? 'EQUIP' : `<span class="coin-pip pip"></span>${def.cost}`}
+    </button>
+  `;
+  const btn = card.querySelector('.bcard-buy');
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (isActive) return;
+    if (isOwned){ equipBoarder(key); return; }
+    if (canAfford){ buyBoarder(key); return; }
+  });
+  // Render preview after card is in the DOM
+  setTimeout(() => renderBoarderPreview(card.querySelector('.bcard-art'), def), 0);
+  return card;
+}
+
+function makeUpgradeCard(key, def){
+  const lvl = upLevel(key);
+  const isMax = lvl >= def.max;
+  const cost = isMax ? null : def.costs[lvl];
+  const canAfford = !isMax && store.totalCoins >= cost;
+  const card = document.createElement('div');
+  card.className = 'big-card ' + (isMax ? 'maxed' : (canAfford ? '' : 'locked'));
+  // Icon for upgrade — simple inline SVG per key
+  const ICONS = {
+    quickStart: '<svg viewBox="0 0 64 64" width="100" height="100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 38l18-22 8 14 10-4-22 30-8-12-6-6z"/></svg>',
+    magnet:     '<svg viewBox="0 0 64 64" width="100" height="100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14v18a18 18 0 0036 0V14h-10v18a8 8 0 01-16 0V14z"/><path d="M14 14h10M40 14h10" stroke-width="4"/></svg>',
+    glideWings: '<svg viewBox="0 0 64 64" width="100" height="100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 32c14-8 24-8 26 0 2-8 12-8 26 0-12 6-22 8-26 0-4 8-14 6-26 0z"/><circle cx="32" cy="32" r="3" fill="currentColor"/></svg>',
+    boost:      '<svg viewBox="0 0 64 64" width="100" height="100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="32" r="14"/><path d="M32 6v6M32 52v6M6 32h6M52 32h6M14 14l4 4M46 46l4 4M14 50l4-4M46 18l4-4"/></svg>',
+    frenzyKing: '<svg viewBox="0 0 64 64" width="100" height="100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 50l8-22 8 16 8-26 8 22 8-12v22z"/><circle cx="44" cy="14" r="3" fill="currentColor"/></svg>',
+  };
+  const icon = ICONS[key] || '';
+  const lvlDots = Array.from({length: def.max}, (_, i) => `<span class="lvl-dot ${i < lvl ? 'on' : ''}"></span>`).join('');
+  card.innerHTML = `
+    <div class="bcard-art" style="color:${isMax ? 'var(--mint)' : 'var(--gold)'}">${icon}</div>
+    <div>
+      <div class="bcard-name">${def.name}</div>
+      <div class="bcard-desc">${def.desc}</div>
+    </div>
+    <div class="bcard-levels">${lvlDots}<span class="lvl-l">LVL ${lvl}/${def.max}</span></div>
+    <div class="bcard-meta">${isMax ? 'MAX LEVEL — JE BENT KLAAR' : (canAfford ? 'TAP UPGRADE' : 'NEED MORE COINS')}</div>
+    <button class="bcard-buy ${isMax ? 'maxed' : (canAfford ? '' : 'locked')}" data-key="${key}">
+      ${isMax ? 'MAX' : `<span class="coin-pip pip"></span>${cost}`}
+    </button>
+  `;
+  const btn = card.querySelector('.bcard-buy');
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!isMax && canAfford) buyUpgrade(key);
+  });
+  return card;
+}
+
+function renderBoarderPreview(host, def){
+  // 220×180 canvas with the boarder skin drawn at scale, plus a faint slope
+  const w = host.clientWidth || 220;
+  const h = host.clientHeight || 200;
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const c = document.createElement('canvas');
+  c.width = w * dpr; c.height = h * dpr;
+  c.style.width = w + 'px'; c.style.height = h + 'px';
+  // Wipe previous canvas if any
+  Array.from(host.querySelectorAll('canvas')).forEach(n => n.remove());
+  host.appendChild(c);
+  const cx = c.getContext('2d');
+  cx.setTransform(dpr,0,0,dpr,0,0);
+  // Soft floor curve
+  cx.fillStyle = 'rgba(255,250,238,.06)';
+  cx.beginPath();
+  cx.moveTo(0, h);
+  for (let x = 0; x <= w; x += 6){
+    const y = h * 0.78 + Math.sin(x * 0.04) * 8;
+    cx.lineTo(x, y);
   }
+  cx.lineTo(w, h);
+  cx.closePath();
+  cx.fill();
+  // Snow cap line
+  cx.strokeStyle = 'rgba(255,250,238,.55)';
+  cx.lineWidth = 2;
+  cx.beginPath();
+  for (let x = 0; x <= w; x += 6){
+    const y = h * 0.78 + Math.sin(x * 0.04) * 8;
+    if (x === 0) cx.moveTo(x, y); else cx.lineTo(x, y);
+  }
+  cx.stroke();
+  // Boarder using drawBoarder with skin override
+  cx.save();
+  cx.translate(w/2, h * 0.66);
+  cx.scale(2.2, 2.2);
+  // We re-implement a minimal version that doesn't read G state for trail/frenzy
+  drawBoarderPreview(cx, def);
+  cx.restore();
+}
+
+function drawBoarderPreview(ctx, skin){
+  // No board flap (no G.daytime), no goggle frenzy color shift
+  ctx.save();
+  ctx.globalAlpha = skin.alpha;
+  // Shadow
+  ctx.beginPath();
+  ctx.ellipse(0, 16, 26, 4, 0, 0, TAU);
+  ctx.fillStyle = 'rgba(20,8,40,.35)';
+  ctx.fill();
+  if (skin.halo){
+    ctx.shadowColor = hexToRgba(skin.scarf, 0.65);
+    ctx.shadowBlur = 22;
+  }
+  ctx.fillStyle = skin.body;
+  // board
+  ctx.beginPath();
+  ctx.moveTo(-22, 11); ctx.lineTo(22, 11);
+  ctx.quadraticCurveTo(30, 14, 22, 17);
+  ctx.lineTo(-22, 17);
+  ctx.quadraticCurveTo(-30, 14, -22, 11);
+  ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = skin.scarf;
+  ctx.fillRect(-19, 13.4, 38, 1.4);
+  // body
+  ctx.fillStyle = skin.body;
+  ctx.beginPath();
+  ctx.moveTo(-7, 12); ctx.lineTo(-10, -3); ctx.lineTo(-8, -11);
+  ctx.lineTo(-2, -18); ctx.lineTo(8, -16); ctx.lineTo(10, -3); ctx.lineTo(8, 12);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(8, -12); ctx.quadraticCurveTo(15, -10, 13, -3);
+  ctx.lineTo(10, -3); ctx.lineTo(7, -8);
+  ctx.closePath(); ctx.fill();
+  // head
+  ctx.beginPath(); ctx.arc(3, -22, 7, 0, TAU); ctx.fill();
+  // helmet stripe
+  ctx.beginPath(); ctx.arc(3, -22, 7, Math.PI*1.05, Math.PI*1.95);
+  ctx.lineWidth = 1.8; ctx.strokeStyle = skin.scarf; ctx.stroke();
+  // goggle
+  ctx.beginPath(); ctx.arc(5, -22, 2.4, 0, TAU);
+  ctx.fillStyle = skin.scarf;
+  if (skin.glow){ ctx.shadowColor = hexToRgba(skin.scarf, .9); ctx.shadowBlur = 10; }
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // scarf — static, no flap
+  const baseRGB = hexToRGB(skin.scarf);
+  for (let i = 0; i < 6; i++){
+    const s = (i + 1) / 6;
+    const w = 16 - i * 2.1;
+    ctx.fillStyle = `rgba(${baseRGB.r},${baseRGB.g},${baseRGB.b},${0.95 - s*0.55})`;
+    ctx.beginPath();
+    ctx.ellipse(-i * 5.5 - 6, i * 1.5 - 12, w, 3, -0.18, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function buyBoarder(key){
+  const def = BOARDERS[key];
+  if (!def || owns(key)) return;
+  if (store.totalCoins < def.cost) return;
+  store.totalCoins -= def.cost;
+  store.boards.push(key);
+  store.activeBoard = key;
+  persist();
+  A.init(); A.resume();
+  A.blip({ freq: 660, freqEnd: 1320, dur: 0.22, type:'triangle', gain: 0.3 });
+  setTimeout(() => A.blip({ freq: 1760, dur: 0.14, type:'triangle', gain: 0.24 }), 80);
+  flashScreen(0.22);
+  if (navigator.vibrate) try { navigator.vibrate(12); } catch {}
+  renderShop();
+  refreshMenu();
+}
+function equipBoarder(key){
+  if (!owns(key)) return;
+  store.activeBoard = key;
+  persist();
+  A.init(); A.resume();
+  A.blip({ freq: 880, dur: 0.12, type:'triangle', gain: 0.22 });
+  if (navigator.vibrate) try { navigator.vibrate(8); } catch {}
+  renderShop();
+}
+
+function updateDots(){
+  const rail = $('#cardRail');
+  if (!rail) return;
+  const w = rail.clientWidth;
+  if (w === 0) return;
+  const idx = Math.round(rail.scrollLeft / w);
+  document.querySelectorAll('#cardDots .d').forEach((d, i) => d.classList.toggle('on', i === idx));
+  updateArrows(idx);
+}
+function updateArrows(idx){
+  const rail = $('#cardRail');
+  if (!rail) return;
+  const w = rail.clientWidth;
+  if (idx == null) idx = Math.round(rail.scrollLeft / Math.max(1,w));
+  const max = rail.children.length - 1;
+  $('#railLeft').disabled  = idx <= 0;
+  $('#railRight').disabled = idx >= max;
+}
+function railNudge(dir){
+  const rail = $('#cardRail');
+  const w = rail.clientWidth;
+  rail.scrollBy({ left: dir * w, behavior: 'smooth' });
 }
 
 function buyUpgrade(key){
