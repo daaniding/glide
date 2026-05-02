@@ -1,0 +1,13 @@
+{
+  "name": "glide-game",
+  "version": "1.0.0",
+  "description": "Endless slope-glider — Tiny Wings-style rhythm with coins, shop, upgrades.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node serve.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

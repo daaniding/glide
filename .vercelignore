@@ -1,0 +1,7 @@
+_test-*.mjs
+serve.mjs
+screenshot.mjs
+daan-iding.html
+node_modules
+.claude
+.git
