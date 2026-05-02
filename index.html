@@ -1624,9 +1624,11 @@ function resize(){
    Worst-case slope angle ~26° (still rideable). */
 function makeGroundFn(seed){
   const rng = mulberry32(seed);
-  // Sharper main wave — the curvature at apex is what makes natural launches happen
-  const main = { amp: 200 + rng() * 50, freq: 0.0022 + rng() * 0.0006, phase: rng() * TAU };
-  const med  = { amp: 32  + rng() * 18, freq: 0.0058 + rng() * 0.0018, phase: rng() * TAU };
+  // Tiny Wings — small undulating waves; multiple visible on screen.
+  // Main amp 100, freq 0.0036 → wavelength ~1750px, amp ~100
+  // Camera shows ~3-4 waves at once. Bird arcs OVER several at high speed.
+  const main = { amp:  90 + rng() * 24, freq: 0.0036 + rng() * 0.0012, phase: rng() * TAU };
+  const med  = { amp:  22 + rng() * 12, freq: 0.0096 + rng() * 0.0030, phase: rng() * TAU };
   return (x) => {
     return Math.sin(x * main.freq + main.phase) * main.amp
          + Math.sin(x * med.freq  + med.phase ) * med.amp;
@@ -1675,7 +1677,7 @@ function newRun({ daily=false, demo=false } = {}){
   G.lastTapT = -1;
   G.coins = 0;
   G.coinsAhead = [];
-  for (let i = 1; i < 14; i++) tryAddCoin(i * 180);
+  for (let i = 1; i < 10; i++) tryAddCoin(i * 320);
   G.camX = G.px - G.W * 0.30; G.camY = G.py - G.H * 0.55;
   G.camZoom = 1; G.targetZoom = 1;
   G.starsAhead = []; G.ringsAhead = []; G.updraftsAhead = []; G.cloudsBg = []; G.trees = [];
@@ -1765,11 +1767,21 @@ function addCloud(worldX, randomY=false){
   });
 }
 function tryAddCoin(worldX){
-  // Coins float in arcs at low altitudes, mostly between hills
+  // Tiny Wings coin arcs — drop a row of 6-10 coins in a parabolic arc above a hill,
+  // matching the bird's natural flight trajectory.
   if (G.rng() < 0.85){
-    const gy = ground(worldX);
-    const y = gy - (90 + G.rng() * 220);
-    G.coinsAhead.push({ x: worldX, y, taken: false, twinkle: G.rng() * TAU });
+    const arcLen   = 6 + Math.floor(G.rng() * 5);   // 6-10 coins per arc
+    const arcWidth = 220 + G.rng() * 120;           // span of the arc
+    const arcPeak  = 110 + G.rng() * 90;            // height above ground at apex
+    const startX   = worldX - arcWidth / 2;
+    const baseGy   = ground(worldX);
+    for (let i = 0; i < arcLen; i++){
+      const t = i / (arcLen - 1);
+      const x = startX + t * arcWidth;
+      // Parabolic arc: y = baseGy - peak * (1 - (2t-1)^2)
+      const arcY = baseGy - arcPeak * (1 - (2*t - 1) ** 2);
+      G.coinsAhead.push({ x, y: arcY, taken: false, twinkle: G.rng() * TAU });
+    }
   }
 }
 function maybeAddTree(worldX){
@@ -1805,9 +1817,9 @@ function seedSnowfall(){
    • On ground: hug the slope, momentum preserved, slope gravity is GENTLE (0.5×) so uphills don't grind you to a halt
    • You always have a baseline 220 forward momentum, so you can recover from a bad jump
    • Land cleanly on a downslope = PERFECT SLIDE */
-const GRAVITY            = 1700;       // a touch heavier — gives more dive punch
-const GLIDE_GRAV         = 0.45;       // wings out → 45% gravity for clean glide arcs
-const DIVE_PULL          = 2600;       // big dive force — pressing on a downslope catapults you forward
+const GRAVITY            = 1600;
+const GLIDE_GRAV         = 0.32;       // wings out → very floaty (Tiny Wings — bird stays up high)
+const DIVE_PULL          = 2400;       // dive press still decisive but balanced for smaller hills
 const MAX_VX             = 1500;       // higher ceiling for the rush
 const MIN_VX             = 280;        // baseline forward — never feels stuck
 const START_VX           = 500;        // first wave already flying
@@ -2081,7 +2093,8 @@ function update(realDt){
   // Coins (with magnet)
   while (!G.coinsAhead.length || G.coinsAhead[G.coinsAhead.length-1].x < farAheadX){
     const lastX = G.coinsAhead.length ? G.coinsAhead[G.coinsAhead.length-1].x : G.px;
-    tryAddCoin(lastX + 140 + G.rng() * 220);
+    // Anchor the next arc roughly above the next wave's apex
+    tryAddCoin(lastX + 280 + G.rng() * 200);
   }
   const magR = upMagnetRadius();
   for (const c of G.coinsAhead){
