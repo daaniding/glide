@@ -1608,19 +1608,17 @@ function resize(){
   if (G.snowfall.length === 0) seedSnowfall();
 }
 
-/* ─────  TERRAIN — smooth Tiny Wings waves: 1 main + 1 medium + 1 fine  ───── */
+/* ─────  TERRAIN — Tiny Wings long gentle waves
+   Main wavelength: ~3500 px (very long, smooth flowing hills)
+   Medium variation gives mild texture; no fine layer to keep slopes smooth.
+   Worst-case slope angle ~22° instead of ~40° before. */
 function makeGroundFn(seed){
   const rng = mulberry32(seed);
-  // Main long-wavelength wave: the actual hills you ride
-  const main = { amp: 130 + rng() * 60, freq: 0.0028 + rng() * 0.0008, phase: rng() * TAU };
-  // Medium variation: keeps it from being repetitive
-  const med  = { amp: 38 + rng() * 26,  freq: 0.0078 + rng() * 0.0030, phase: rng() * TAU };
-  // Fine surface texture: subtle, doesn't disturb riding
-  const fine = { amp: 10 + rng() * 6,   freq: 0.020  + rng() * 0.012,  phase: rng() * TAU };
+  const main = { amp: 110 + rng() * 30, freq: 0.0018 + rng() * 0.0004, phase: rng() * TAU };
+  const med  = { amp: 22  + rng() * 12, freq: 0.0058 + rng() * 0.0020, phase: rng() * TAU };
   return (x) => {
     return Math.sin(x * main.freq + main.phase) * main.amp
-         + Math.sin(x * med.freq  + med.phase ) * med.amp
-         + Math.sin(x * fine.freq + fine.phase) * fine.amp;
+         + Math.sin(x * med.freq  + med.phase ) * med.amp;
   };
 }
 function ground(x){
@@ -1801,20 +1799,22 @@ function seedSnowfall(){
   }
 }
 
-/* ─────  PHYSICS — proper Tiny Wings rhythm  ─────
-   • In air without input: WINGS OUT → ~50% gravity, you arc gracefully (not perpetual flight)
-   • In air with input: WINGS TUCKED → full gravity + dive pull, you plummet
-   • On ground: hug the slope, energy preserved, keep momentum
-   • Land cleanly on a downslope = PERFECT SLIDE (green flash + bonus + frenzy stack) */
-const GRAVITY     = 1450;
-const GLIDE_GRAV  = 0.50;          // wings-out feel — half gravity, you arc smoothly across waves
-const DIVE_PULL   = 2400;          // pressing = full plummet
-const MAX_VX      = 1240;
-const MIN_VX      = 80;            // can really slow down on uphills if you mistime, but never zero
-const START_VX    = 380;           // start with comfortable speed
-const DRAG_AIR_PER_SEC  = 0.06;    // very slow air bleed
-const DRAG_VERT_PER_SEC = 0.16;    // mild vertical drag during glide
-const BOUNCE_LOSS = 0.92;          // proper energy loss on impact, but only ONCE per landing
+/* ─────  PHYSICS — Tiny Wings model  ─────
+   • Air without input: wings out → ~50% gravity, gentle arcs
+   • Air with input: wings tucked → full gravity + dive pull
+   • On ground: hug the slope, momentum preserved, slope gravity is GENTLE (0.5×) so uphills don't grind you to a halt
+   • You always have a baseline 220 forward momentum, so you can recover from a bad jump
+   • Land cleanly on a downslope = PERFECT SLIDE */
+const GRAVITY            = 1500;
+const GLIDE_GRAV         = 0.50;
+const DIVE_PULL          = 2300;
+const MAX_VX             = 1240;
+const MIN_VX             = 220;        // never feels stuck — the Tiny Wings baseline
+const START_VX           = 420;        // first wave already moving
+const DRAG_AIR_PER_SEC   = 0.05;
+const DRAG_VERT_PER_SEC  = 0.16;
+const BOUNCE_LOSS        = 0.92;       // energy loss on impact only
+const SLOPE_GRAVITY_GAIN = 0.55;       // ⭐ KEY FIX: slope assist is HALF strength → forgiving uphills
 const ROTATE_SNAP = 9;
 const COYOTE_TIME = 0.22;
 const PERFECT_SPEED_MIN = 280;
@@ -1897,9 +1897,8 @@ function update(realDt){
     G.vy = ty * vTan * loss;
     G.py = gy;
 
-    // Slope assist — gravity along the surface tangent. Going down = gain, going up = lose.
-    // This is the ONLY way speed changes while rolling. Pure Tiny Wings.
-    const slopeGravity = GRAVITY * Math.sin(angle);
+    // Slope assist — gravity along the surface tangent, scaled DOWN (Tiny Wings is forgiving on uphills).
+    const slopeGravity = GRAVITY * SLOPE_GRAVITY_GAIN * Math.sin(angle);
     G.vx += Math.cos(angle) * slopeGravity * dt;
     G.vy += Math.sin(angle) * slopeGravity * dt;
 
