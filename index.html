@@ -1675,7 +1675,8 @@ function newRun({ daily=false, demo=false } = {}){
   G.frenzyT = 0; G.frenzyCount = 0;
   G.stars = 0; G.starsGold = 0;
   G.airTime = 0; G.airTimeBest = 0; G.diveSeconds = 0;
-  G.daytime = G.rng() * 4;
+  // Bias the run start toward the iconic warm sunset palette (index 0).
+  G.daytime = demo ? G.rng() * 4 : G.rng() * 0.4;
   G.groundContact = false; G.prevGroundContact = false;
   G.timeScale = 1; G.targetTimeScale = 1;
   G.topSpeed = 0;
@@ -2596,15 +2597,29 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 
+/* Tiny Wings palettes — each has 5 BAND colors for the iconic striped hills.
+   bands[0] = topmost (lightest), bands[4] = base (darkest) */
 const SKY_PALETTES = [
-  // sunset rose-amber
-  { sTop:'#3B0F4E', sBot:'#FF7A6B', hFar:'#3D1740', hMid:'#5F1B53', hNear:'#8B2566', glow:'#FFC176', cloud:'#FFB39A', name:'sunset' },
-  // deep night purple
-  { sTop:'#08031C', sBot:'#1A0E3A', hFar:'#160B25', hMid:'#1F0E33', hNear:'#341855', glow:'#7E5BAA', cloud:'#5C4080', name:'night' },
-  // dawn teal-orange
-  { sTop:'#1F2C58', sBot:'#FFB07F', hFar:'#2E2050', hMid:'#4F2257', hNear:'#7A2A60', glow:'#FFE4B0', cloud:'#FFCDA8', name:'dawn' },
-  // cool day silver-blue
-  { sTop:'#5BA3E0', sBot:'#FBE6A8', hFar:'#3B5C7A', hMid:'#5A8AA8', hNear:'#82B0CD', glow:'#FFF5C5', cloud:'#FFFFFF', name:'day' },
+  // Tiny Wings sunset (warm peach → magenta → deep purple)
+  { sTop:'#FFE3B8', sBot:'#FFB287',
+    hFar:'#7E3A65', hMid:'#A8467F', hNear:'#C95A6E',
+    bands:['#FFC178','#F08367','#D8546B','#9F3370','#4A1E5A'],
+    glow:'#FFD49A', cloud:'#FFD0B0', name:'tw_sunset' },
+  // Tiny Wings dusk (rose → indigo)
+  { sTop:'#FFC8A8', sBot:'#FF8FAE',
+    hFar:'#3F2058', hMid:'#6E2C70', hNear:'#A23E80',
+    bands:['#FFA176','#E66E8E','#B14785','#612F73','#2C1147'],
+    glow:'#FFB78A', cloud:'#FFC4B0', name:'tw_dusk' },
+  // Tiny Wings ocean (mint → teal → night)
+  { sTop:'#9CDDC8', sBot:'#FFCFA8',
+    hFar:'#1F4A5C', hMid:'#2E6F70', hNear:'#4A9777',
+    bands:['#FFCD80','#B4D67E','#5AAE83','#2D6F70','#10334A'],
+    glow:'#FFE2A0', cloud:'#FFFFFF', name:'tw_ocean' },
+  // Tiny Wings night (deep starry)
+  { sTop:'#0E0828', sBot:'#3A1A55',
+    hFar:'#1A0E33', hMid:'#2C1747', hNear:'#48266E',
+    bands:['#7E4B9A','#5F3580','#3C1F60','#241341','#0E082B'],
+    glow:'#9C7ABF', cloud:'#5C4080', name:'tw_night' },
 ];
 function lerpHex(a,b,t){
   const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16);
@@ -2625,6 +2640,7 @@ function getPalette(){
     hFar:  lerpHex(p0.hFar, p1.hFar, t),
     hMid:  lerpHex(p0.hMid, p1.hMid, t),
     hNear: lerpHex(p0.hNear, p1.hNear, t),
+    bands: p0.bands.map((c, i) => lerpHex(c, p1.bands[i], t)),
     glow:  lerpHex(p0.glow, p1.glow, t),
     cloud: lerpHex(p0.cloud, p1.cloud, t),
     name:  p0.name,
@@ -3016,54 +3032,74 @@ function drawLamp(ctx, x, y, pal){
   ctx.restore();
 }
 
+/* Tiny Wings BANDED hills — horizontal color strata with wavy stripes that follow the surface.
+   Each band is a polygon that "rides" the ground curve at increasing depth. */
 function drawGround(ctx, pal){
   const step = 4;
-  // Base fill — solid near hill color
-  ctx.fillStyle = pal.hNear;
-  ctx.beginPath();
-  ctx.moveTo(-200, G.H + 200);
-  for (let x = -200; x <= G.W + 200; x += step){
-    const wx = x + G.camX;
-    const wy = ground(wx);
-    ctx.lineTo(x, wy - G.camY);
-  }
-  ctx.lineTo(G.W + 200, G.H + 200);
-  ctx.closePath();
-  ctx.fill();
+  const bands = pal.bands;          // 5 colors, top → bottom
+  const bandThickness = [16, 28, 36, 48, 9999];   // thickness per band (last fills rest)
 
-  // Snow-cap layer (lighter band along the top edge, ~14px thick)
-  ctx.beginPath();
-  ctx.fillStyle = 'rgba(255,250,238,.85)';
-  ctx.moveTo(-200, ground(-200 + G.camX) - G.camY);
+  // Build the surface curve once
+  const surface = [];
   for (let x = -200; x <= G.W + 200; x += step){
     const wx = x + G.camX;
-    const wy = ground(wx);
-    ctx.lineTo(x, wy - G.camY);
+    surface.push({ x, y: ground(wx) - G.camY });
   }
-  for (let x = G.W + 200; x >= -200; x -= step){
-    const wx = x + G.camX;
-    const wy = ground(wx);
-    ctx.lineTo(x, wy - G.camY + 9);
-  }
-  ctx.closePath();
-  ctx.fill();
 
-  // subtle blue shadow band below snow
+  // Draw each band as a strip between yTop and yBottom, clipped to ground curve
+  let yOff = 0;
+  for (let b = 0; b < bands.length; b++){
+    const thick = bandThickness[b];
+    ctx.fillStyle = bands[b];
+    ctx.beginPath();
+    // Top edge follows the surface (offset down by yOff)
+    ctx.moveTo(surface[0].x, surface[0].y + yOff);
+    for (let i = 1; i < surface.length; i++){
+      ctx.lineTo(surface[i].x, surface[i].y + yOff);
+    }
+    // Bottom edge: offset down by (yOff + thick), but never below screen
+    const yBottom = b === bands.length - 1 ? G.H + 200 : null;
+    if (yBottom != null){
+      ctx.lineTo(surface[surface.length-1].x, G.H + 200);
+      ctx.lineTo(surface[0].x, G.H + 200);
+    } else {
+      for (let i = surface.length - 1; i >= 0; i--){
+        ctx.lineTo(surface[i].x, surface[i].y + yOff + thick);
+      }
+    }
+    ctx.closePath();
+    ctx.fill();
+    yOff += thick;
+  }
+
+  // Wavy stripe lines ACROSS the bands — the signature Tiny Wings detail.
+  // Several thin contour lines following the surface at offsets, in a brighter accent color.
+  const stripeCol = hexToRgba(bands[0], 0.42);
+  ctx.strokeStyle = stripeCol;
+  ctx.lineWidth = 1.4;
+  const stripeOffsets = [6, 13, 22, 32, 44, 58, 76, 96, 122, 152];
+  for (const off of stripeOffsets){
+    ctx.beginPath();
+    for (let i = 0; i < surface.length; i++){
+      const wx = surface[i].x + G.camX;
+      // Per-stripe wave displacement so they look hand-painted, not parallel
+      const wob = Math.sin(wx * 0.012 + off * 0.31) * 1.6 + Math.sin(wx * 0.04 + off * 0.13) * 0.8;
+      const y = surface[i].y + off + wob;
+      if (i === 0) ctx.moveTo(surface[i].x, y);
+      else ctx.lineTo(surface[i].x, y);
+    }
+    ctx.stroke();
+  }
+
+  // Soft top-edge highlight on the surface itself (sells the painted feel)
   ctx.beginPath();
-  ctx.fillStyle = 'rgba(34,16,68,.18)';
-  ctx.moveTo(-200, ground(-200 + G.camX) - G.camY + 9);
-  for (let x = -200; x <= G.W + 200; x += step){
-    const wx = x + G.camX;
-    const wy = ground(wx);
-    ctx.lineTo(x, wy - G.camY + 9);
+  ctx.strokeStyle = hexToRgba(pal.glow, 0.32);
+  ctx.lineWidth = 2;
+  for (let i = 0; i < surface.length; i++){
+    if (i === 0) ctx.moveTo(surface[i].x, surface[i].y);
+    else ctx.lineTo(surface[i].x, surface[i].y);
   }
-  for (let x = G.W + 200; x >= -200; x -= step){
-    const wx = x + G.camX;
-    const wy = ground(wx);
-    ctx.lineTo(x, wy - G.camY + 22);
-  }
-  ctx.closePath();
-  ctx.fill();
+  ctx.stroke();
 }
 
 function drawUpdraft(ctx, x, y, w, h, phase){
@@ -3271,176 +3307,161 @@ function drawPlayer(ctx, pal){
   }
 }
 
-/* Silhouette boarder — uses the currently equipped skin colors,
-   plus an extending kite-cape (glide pose) and landing squash */
+/* Tiny Wings bird — round, cute, with a striped belly, beak, eye, and wings
+   that visibly tuck (pressed) or extend (gliding). Skins reskin body/accent colors. */
 function drawBoarder(ctx, x, y, rot, isGhost, skinOverride){
   const skin = skinOverride || activeBoard();
   const wingExt = isGhost ? 0 : (G.wingExt || 0);
   const squash  = isGhost ? 0 : (G.squash  || 0);
+  const flap    = Math.sin((G.daytime || 0) * 18) * 0.5 + 0.5; // 0..1 wing flap cycle
 
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rot);
-  // Squash: stretch horizontally, compress vertically on landing
-  const sx = 1.5 * (1 + squash * 0.18);
-  const sy = 1.5 * (1 - squash * 0.22);
+  const sx = 1.6 * (1 + squash * 0.14);
+  const sy = 1.6 * (1 - squash * 0.16);
   ctx.scale(sx, sy);
 
-  // Soft shadow disc
+  // Soft shadow under bird
   if (!isGhost){
     ctx.beginPath();
-    ctx.ellipse(0, 16, 26 + squash * 8, 4, 0, 0, TAU);
+    ctx.ellipse(0, 18, 14 + squash * 6, 3, 0, 0, TAU);
     ctx.fillStyle = 'rgba(20,8,40,.32)';
     ctx.fill();
   }
 
-  // Halo aura for high speed / frenzy / glow skins
+  // Halo aura at speed / frenzy / glow skins
   if (!isGhost){
     const speed = G.speedNorm || 0;
     const auraStrength = clamp(0, 1, (speed - 0.4) * 1.6) + (G.frenzyT > 0 ? 0.4 : 0) + (skin.halo ? 0.2 : 0);
     if (auraStrength > 0.05){
       const auraRGB = hexToRGB(G.frenzyT > 0 ? '#FF6B3F' : skin.scarf);
-      const aGrad = ctx.createRadialGradient(0, -6, 4, 0, -6, 32);
-      aGrad.addColorStop(0, `rgba(${auraRGB.r},${auraRGB.g},${auraRGB.b},${0.32 * auraStrength})`);
+      const aGrad = ctx.createRadialGradient(0, 0, 4, 0, 0, 28);
+      aGrad.addColorStop(0, `rgba(${auraRGB.r},${auraRGB.g},${auraRGB.b},${0.30 * auraStrength})`);
       aGrad.addColorStop(1, `rgba(${auraRGB.r},${auraRGB.g},${auraRGB.b},0)`);
       ctx.fillStyle = aGrad;
-      ctx.fillRect(-32, -32, 64, 64);
+      ctx.fillRect(-28, -28, 56, 56);
     }
   }
 
   ctx.globalAlpha = isGhost ? 0.55 : skin.alpha;
-  const bodyCol = isGhost ? 'rgba(20,8,40,.55)' : skin.body;
 
-  // KITE-CAPE — extends behind/above the rider when wings are out, tucks when pressed
-  if (!isGhost && wingExt > 0.04){
-    const k = wingExt;
-    const capeRGB = hexToRGB(G.frenzyT > 0 ? '#FF6B3F' : skin.scarf);
-    // Outer translucent layer
-    ctx.fillStyle = `rgba(${capeRGB.r},${capeRGB.g},${capeRGB.b},${0.28 * k})`;
+  const bodyCol  = isGhost ? 'rgba(20,8,40,.55)' : skin.body;
+  const accent   = skin.scarf;
+  const beakCol  = '#FFAA40';
+
+  // BACK WING (drawn behind body, partially visible) — tucked when pressed, extended in glide
+  if (!isGhost){
+    const wKx = -8 - 12 * wingExt;
+    const wKy = -2 - 4 * wingExt;
+    const wTipx = -4 - 16 * wingExt;
+    const wTipy = -6 - 14 * wingExt - flap * 2 * wingExt;
+    ctx.fillStyle = bodyCol;
     ctx.beginPath();
-    ctx.moveTo(-2, -8);
-    ctx.quadraticCurveTo(-22 - 12 * k, -16 - 18 * k, -28 - 18 * k, -2 - 6 * k);
-    ctx.quadraticCurveTo(-18 - 8 * k, -2, -8, -2);
+    ctx.moveTo(-2, -2);
+    ctx.quadraticCurveTo(wKx, wKy, wTipx, wTipy);
+    ctx.quadraticCurveTo(-6, 0, -2, 4);
     ctx.closePath();
     ctx.fill();
-    // Inner ribbed layer
-    ctx.strokeStyle = `rgba(${capeRGB.r},${capeRGB.g},${capeRGB.b},${0.55 * k})`;
-    ctx.lineWidth = 1.2;
-    for (let i = 1; i <= 3; i++){
-      const f = i / 3;
+    // Wing accent stripe
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(-3, -1);
+    ctx.quadraticCurveTo(wKx + 1, wKy + 1, wTipx + 1, wTipy + 2);
+    ctx.stroke();
+  }
+
+  // BODY — round, ~13px radius
+  ctx.beginPath();
+  ctx.arc(0, 0, 13, 0, TAU);
+  ctx.fillStyle = bodyCol;
+  ctx.fill();
+
+  if (!isGhost){
+    // BELLY — light cream patch with horizontal stripes (the signature Tiny Wings bird marking)
+    const bellyGrad = ctx.createRadialGradient(0, 4, 2, 0, 4, 12);
+    bellyGrad.addColorStop(0, '#FFF1DF');
+    bellyGrad.addColorStop(1, hexToRgba('#FFF1DF', 0.85));
+    ctx.fillStyle = bellyGrad;
+    ctx.beginPath();
+    ctx.ellipse(1, 4, 8, 7, 0, 0, TAU);
+    ctx.fill();
+
+    // Belly stripes — 3 thin curved lines in the accent color
+    ctx.strokeStyle = hexToRgba(accent, 0.7);
+    ctx.lineWidth = 1.1;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++){
+      const yy = 1 + i * 2.5;
       ctx.beginPath();
-      ctx.moveTo(-2, -8 + f * 4);
-      ctx.quadraticCurveTo(-12 - 8 * k * f, -8 - 10 * k * f, -22 - 14 * k, -4 - 4 * k);
+      ctx.moveTo(-5.5, yy + 1);
+      ctx.quadraticCurveTo(1, yy - 0.5, 6.5, yy + 1);
       ctx.stroke();
     }
-    // Edge piping
-    ctx.strokeStyle = `rgba(${capeRGB.r},${capeRGB.g},${capeRGB.b},${0.85 * k})`;
-    ctx.lineWidth = 1.6;
+
+    // Top of head — small accent crest
+    ctx.fillStyle = accent;
     ctx.beginPath();
-    ctx.moveTo(-2, -8);
-    ctx.quadraticCurveTo(-22 - 12 * k, -16 - 18 * k, -28 - 18 * k, -2 - 6 * k);
-    ctx.stroke();
-  }
-
-  if (!isGhost && skin.halo){
-    ctx.shadowColor = hexToRgba(skin.scarf, 0.7);
-    ctx.shadowBlur = 22;
-  }
-
-  // Board
-  ctx.fillStyle = bodyCol;
-  ctx.beginPath();
-  ctx.moveTo(-22, 11);
-  ctx.lineTo(22, 11);
-  ctx.quadraticCurveTo(30, 14, 22, 17);
-  ctx.lineTo(-22, 17);
-  ctx.quadraticCurveTo(-30, 14, -22, 11);
-  ctx.closePath();
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  if (!isGhost){
-    ctx.fillStyle = skin.scarf;
-    ctx.fillRect(-19, 13.4, 38, 1.4);
-  }
-
-  // Body silhouette — a touch more elegant proportions
-  ctx.fillStyle = bodyCol;
-  ctx.beginPath();
-  ctx.moveTo(-7, 12);
-  ctx.lineTo(-10, -3);
-  ctx.lineTo(-8, -11);
-  ctx.lineTo(-2, -18);
-  ctx.lineTo(8, -16);
-  ctx.lineTo(10, -3);
-  ctx.lineTo(8, 12);
-  ctx.closePath();
-  ctx.fill();
-
-  if (!isGhost){
-    // Front arm — pose changes with wing extension
-    ctx.beginPath();
-    if (wingExt > 0.4){
-      // Extended: arm out to the side
-      ctx.moveTo(8, -12);
-      ctx.quadraticCurveTo(20, -8, 22, 0);
-      ctx.lineTo(18, 1);
-      ctx.lineTo(7, -8);
-    } else {
-      // Tucked: arm close to body
-      ctx.moveTo(8, -12);
-      ctx.quadraticCurveTo(15, -10, 13, -3);
-      ctx.lineTo(10, -3);
-      ctx.lineTo(7, -8);
-    }
+    ctx.moveTo(-2, -11);
+    ctx.quadraticCurveTo(0, -16 - flap, 4, -11);
+    ctx.quadraticCurveTo(2, -10, 0, -10);
     ctx.closePath();
-    ctx.fillStyle = bodyCol;
     ctx.fill();
-  }
 
-  // Head with bobble
-  ctx.beginPath();
-  ctx.arc(3, -22 - squash * 1.5, 7.4, 0, TAU);
-  ctx.fillStyle = bodyCol;
-  ctx.fill();
-
-  if (!isGhost){
-    // Helmet stripe
+    // EYE — white sclera + dark pupil + tiny shine
     ctx.beginPath();
-    ctx.arc(3, -22 - squash * 1.5, 7.4, Math.PI*1.05, Math.PI*1.95);
-    ctx.lineWidth = 1.9;
-    ctx.strokeStyle = skin.scarf;
-    ctx.stroke();
-    // Goggle highlight
-    ctx.beginPath();
-    ctx.arc(5, -22 - squash * 1.5, 2.6, 0, TAU);
-    ctx.fillStyle = G.frenzyT > 0 ? '#FF6B3F' : skin.scarf;
-    if (skin.glow){ ctx.shadowColor = hexToRgba(skin.scarf, 0.95); ctx.shadowBlur = 12; }
+    ctx.arc(5, -3, 3, 0, TAU);
+    ctx.fillStyle = '#FFF1DF';
     ctx.fill();
-    ctx.shadowBlur = 0;
-    // Tiny shine pip in the goggle
     ctx.beginPath();
-    ctx.arc(5.6, -23 - squash * 1.5, 0.9, 0, TAU);
+    ctx.arc(6, -3, 1.6, 0, TAU);
+    ctx.fillStyle = '#1B0C29';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(6.4, -3.5, 0.6, 0, TAU);
     ctx.fillStyle = '#FFFFFF';
     ctx.fill();
-  }
 
-  // Scarf
-  if (!isGhost){
-    ctx.save();
-    ctx.translate(-4, -12);
-    const trail = 7;
-    const baseRGB = hexToRGB(G.frenzyT > 0 ? '#FF6B3F' : skin.scarf);
-    for (let i = 0; i < trail; i++){
-      const s = (i + 1) / trail;
-      const flap = Math.sin(G.daytime * 6 + i * 0.65) * (3 + 2 * (G.speedNorm || 0));
-      const w = 17 - i * 2.0;
-      const h = 3;
-      ctx.fillStyle = `rgba(${baseRGB.r},${baseRGB.g},${baseRGB.b},${0.95 - s*0.55})`;
+    // BEAK — small triangle pointing forward
+    ctx.fillStyle = beakCol;
+    ctx.beginPath();
+    ctx.moveTo(11, -1);
+    ctx.lineTo(15, 0.5);
+    ctx.lineTo(11, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120,60,12,.45)';
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(11, 0.5); ctx.lineTo(14, 0.7);
+    ctx.stroke();
+
+    // FRONT WING — overlays the body when extended, tucks behind when pressed
+    const fwTipx = 6 + 10 * wingExt;
+    const fwTipy = 6 + 8 * wingExt + flap * 1.5;
+    ctx.fillStyle = bodyCol;
+    ctx.beginPath();
+    ctx.moveTo(2, 4);
+    ctx.quadraticCurveTo(8 + 4 * wingExt, 6, fwTipx, fwTipy);
+    ctx.quadraticCurveTo(4, 8, 0, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(3, 5);
+    ctx.quadraticCurveTo(7 + 4 * wingExt, 6.5, fwTipx - 1, fwTipy);
+    ctx.stroke();
+
+    // Glow rim for halo skins
+    if (skin.halo || skin.glow){
+      ctx.strokeStyle = hexToRgba(accent, 0.55);
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.ellipse(-i * 5.5 - 6, flap + i * 1.5, w, h, -0.18, 0, TAU);
-      ctx.fill();
+      ctx.arc(0, 0, 13.6, 0, TAU);
+      ctx.stroke();
     }
-    ctx.restore();
   }
 
   ctx.restore();
@@ -3501,26 +3522,14 @@ function drawFogBand(ctx, pal){
   ctx.fillRect(-200, G.H * 0.42, G.W + 400, G.H * 0.36);
 }
 
-/* Foreground snowfall — flakes elongate into streaks at speed */
+/* Tiny ambient particle flakes — soft and unobtrusive (not aggressive streaks) */
 function drawSnowfall(ctx){
   ctx.save();
-  const streak = clamp(0, 1, (G.vx - 400) / 700);   // 0 below 400 vx, 1 above 1100
   for (const f of G.snowfall){
-    if (streak > 0.05){
-      const len = 6 + streak * 38;
-      ctx.strokeStyle = `rgba(255,250,238,${f.a * (0.6 + streak * 0.4)})`;
-      ctx.lineWidth = f.r * 1.1;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(f.x, f.y);
-      ctx.lineTo(f.x + len, f.y + len * 0.18);
-      ctx.stroke();
-    } else {
-      ctx.beginPath();
-      ctx.arc(f.x, f.y, f.r, 0, TAU);
-      ctx.fillStyle = `rgba(255,250,238,${f.a})`;
-      ctx.fill();
-    }
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.r * 0.8, 0, TAU);
+    ctx.fillStyle = `rgba(255,250,238,${f.a * 0.5})`;
+    ctx.fill();
   }
   ctx.restore();
 }
@@ -3814,13 +3823,23 @@ function renderBoarderPreview(host, def){
 }
 
 function drawBoarderPreview(ctx, skin){
+  // Just delegate to the same bird draw with a fixed pose (wings extended)
   ctx.save();
   ctx.globalAlpha = skin.alpha;
   // Shadow
   ctx.beginPath();
-  ctx.ellipse(0, 16, 26, 4, 0, 0, TAU);
-  ctx.fillStyle = 'rgba(20,8,40,.35)';
+  ctx.ellipse(0, 18, 14, 3, 0, 0, TAU);
+  ctx.fillStyle = 'rgba(20,8,40,.32)';
   ctx.fill();
+  // Use a wrapper that simulates wing extension and no squash
+  const savedG = { wingExt: G.wingExt, squash: G.squash, frenzyT: G.frenzyT, daytime: G.daytime, speedNorm: G.speedNorm };
+  G.wingExt = 0.7; G.squash = 0; G.frenzyT = 0; G.speedNorm = 0;
+  drawBoarder(ctx, 0, 0, 0, false, skin);
+  Object.assign(G, savedG);
+  ctx.restore();
+  return;
+  /* legacy preview body kept below for ref but unreachable */
+  ctx.fillStyle = 'rgba(20,8,40,.35)';
 
   // Halo aura
   const auraRGB = hexToRGB(skin.scarf);
