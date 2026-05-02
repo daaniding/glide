@@ -1817,9 +1817,9 @@ function seedSnowfall(){
    • On ground: hug the slope, momentum preserved, slope gravity is GENTLE (0.5×) so uphills don't grind you to a halt
    • You always have a baseline 220 forward momentum, so you can recover from a bad jump
    • Land cleanly on a downslope = PERFECT SLIDE */
-const GRAVITY            = 1600;
-const GLIDE_GRAV         = 0.32;       // wings out → very floaty (Tiny Wings — bird stays up high)
-const DIVE_PULL          = 2400;       // dive press still decisive but balanced for smaller hills
+const GRAVITY            = 1500;
+const GLIDE_GRAV         = 0.22;       // wings out → super floaty, bird drifts (Tiny Wings feel)
+const DIVE_PULL          = 2400;       // dive force unchanged — only press makes you fall fast
 const MAX_VX             = 1500;       // higher ceiling for the rush
 const MIN_VX             = 280;        // baseline forward — never feels stuck
 const START_VX           = 500;        // first wave already flying
@@ -2009,17 +2009,17 @@ function update(realDt){
 
   // Camera (lookahead + zoom out at high speed/frenzy)
   const camSpeedFactor = (G.vx - MIN_VX) / (MAX_VX - MIN_VX);
-  // When flying high above ground, zoom out further so the world reads "I am SO high"
-  const altitude = Math.max(0, ground(G.px) - G.py);   // px above ground
-  const altFactor = clamp(0, 1, altitude / 700);
-  G.targetZoom = G.frenzyT > 0 ? 0.78 : (1 - clamp(0, 0.32, camSpeedFactor * 0.20 + altFactor * 0.18));
+  // Higher altitude = more zoom-out = more sky visible (the Tiny Wings reveal)
+  const altitude = Math.max(0, ground(G.px) - G.py);
+  const altFactor = clamp(0, 1, altitude / 500);
+  G.targetZoom = G.frenzyT > 0 ? 0.76 : (1 - clamp(0, 0.40, camSpeedFactor * 0.18 + altFactor * 0.30));
   G.camZoom += (G.targetZoom - G.camZoom) * Math.min(1, realDt * 3.5);
 
   const lookX = G.vx * 0.22;
-  const lookY = G.vy * 0.10 - altFactor * 60;
-  // Player sits at 28% width (lots of horizon ahead) and 65% height (mostly sky shows above)
-  const camTargetX = G.px - G.W * 0.28 / G.camZoom + lookX;
-  const camTargetY = G.py - G.H * 0.65 / G.camZoom + lookY;
+  const lookY = G.vy * 0.08 - altFactor * 90;
+  // Tiny Wings framing: bird at ~45% from top, lots of sky above + hills below
+  const camTargetX = G.px - G.W * 0.30 / G.camZoom + lookX;
+  const camTargetY = G.py - G.H * 0.45 / G.camZoom + lookY;
   G.camX += (camTargetX - G.camX) * Math.min(1, realDt * 4.4);
   G.camY += (camTargetY - G.camY) * Math.min(1, realDt * 3.2);
 
@@ -3007,69 +3007,65 @@ function drawLamp(ctx, x, y, pal){
   ctx.restore();
 }
 
-/* Tiny Wings BANDED hills — horizontal color strata with wavy stripes that follow the surface.
-   Each band is a polygon that "rides" the ground curve at increasing depth. */
+/* Tiny Wings hills — HORIZONTAL color bands in screen-space, clipped by the hill silhouette.
+   The stripes do NOT follow the curve — they're flat horizontal bands the hill shape clips.
+   This is the actual Tiny Wings rendering trick. */
 function drawGround(ctx, pal){
   const step = 4;
-  const bands = pal.bands;          // 5 colors, top → bottom
-  const bandThickness = [16, 28, 36, 48, 9999];   // thickness per band (last fills rest)
+  const bands = pal.bands;
 
-  // Build the surface curve once
+  // Build the hill silhouette polygon
   const surface = [];
   for (let x = -200; x <= G.W + 200; x += step){
     const wx = x + G.camX;
     surface.push({ x, y: ground(wx) - G.camY });
   }
 
-  // Draw each band as a strip between yTop and yBottom, clipped to ground curve
-  let yOff = 0;
+  // Find the lowest hill-top y on screen so we know where bands start
+  let topY = G.H;
+  for (const p of surface) if (p.y < topY) topY = p.y;
+
+  // Clip everything to the hill polygon
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(surface[0].x, surface[0].y);
+  for (let i = 1; i < surface.length; i++) ctx.lineTo(surface[i].x, surface[i].y);
+  ctx.lineTo(G.W + 200, G.H + 200);
+  ctx.lineTo(-200, G.H + 200);
+  ctx.closePath();
+  ctx.clip();
+
+  // Horizontal screen-space bands — the iconic Tiny Wings stripes.
+  // Bottom-up: deepest color at the bottom of the screen, lighter as we go up.
+  // Use a vertical span anchored to topY (highest hill point) so bands reveal as the hill rises.
+  const bandHeights = [22, 34, 46, 58, 9999]; // top band thinner, lower bands thicker
+  let y = topY;
   for (let b = 0; b < bands.length; b++){
-    const thick = bandThickness[b];
+    const h = bandHeights[b];
+    const yEnd = (b === bands.length - 1) ? G.H + 400 : y + h;
     ctx.fillStyle = bands[b];
-    ctx.beginPath();
-    // Top edge follows the surface (offset down by yOff)
-    ctx.moveTo(surface[0].x, surface[0].y + yOff);
-    for (let i = 1; i < surface.length; i++){
-      ctx.lineTo(surface[i].x, surface[i].y + yOff);
-    }
-    // Bottom edge: offset down by (yOff + thick), but never below screen
-    const yBottom = b === bands.length - 1 ? G.H + 200 : null;
-    if (yBottom != null){
-      ctx.lineTo(surface[surface.length-1].x, G.H + 200);
-      ctx.lineTo(surface[0].x, G.H + 200);
-    } else {
-      for (let i = surface.length - 1; i >= 0; i--){
-        ctx.lineTo(surface[i].x, surface[i].y + yOff + thick);
-      }
-    }
-    ctx.closePath();
-    ctx.fill();
-    yOff += thick;
+    ctx.fillRect(-200, y, G.W + 400, yEnd - y);
+    y = yEnd;
   }
 
-  // Wavy stripe lines ACROSS the bands — the signature Tiny Wings detail.
-  // Several thin contour lines following the surface at offsets, in a brighter accent color.
-  const stripeCol = hexToRgba(bands[0], 0.42);
-  ctx.strokeStyle = stripeCol;
-  ctx.lineWidth = 1.4;
-  const stripeOffsets = [6, 13, 22, 32, 44, 58, 76, 96, 122, 152];
-  for (const off of stripeOffsets){
+  // Optional: faint horizontal stripe lines within each band (texture detail)
+  ctx.strokeStyle = hexToRgba(bands[0], 0.18);
+  ctx.lineWidth = 1.2;
+  const stripeYs = [topY + 8, topY + 16, topY + 28, topY + 42, topY + 60, topY + 80, topY + 105, topY + 135];
+  for (const sy of stripeYs){
+    if (sy > G.H) break;
     ctx.beginPath();
-    for (let i = 0; i < surface.length; i++){
-      const wx = surface[i].x + G.camX;
-      // Per-stripe wave displacement so they look hand-painted, not parallel
-      const wob = Math.sin(wx * 0.012 + off * 0.31) * 1.6 + Math.sin(wx * 0.04 + off * 0.13) * 0.8;
-      const y = surface[i].y + off + wob;
-      if (i === 0) ctx.moveTo(surface[i].x, y);
-      else ctx.lineTo(surface[i].x, y);
-    }
+    ctx.moveTo(-200, sy);
+    ctx.lineTo(G.W + 200, sy);
     ctx.stroke();
   }
+  ctx.restore();
 
-  // Soft top-edge highlight on the surface itself (sells the painted feel)
+  // Top-edge highlight stroke along the surface itself (outside clip)
   ctx.beginPath();
-  ctx.strokeStyle = hexToRgba(pal.glow, 0.32);
+  ctx.strokeStyle = hexToRgba(pal.glow, 0.45);
   ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
   for (let i = 0; i < surface.length; i++){
     if (i === 0) ctx.moveTo(surface[i].x, surface[i].y);
     else ctx.lineTo(surface[i].x, surface[i].y);
