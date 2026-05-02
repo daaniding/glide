@@ -545,6 +545,18 @@ body.shake-rgb canvas#game{ filter: hue-rotate(8deg) saturate(1.15); }
   padding: 4px;
   gap: 0;
 }
+.shop-tabs.single{
+  background: transparent;
+  border: none;
+  padding: 8px 0;
+}
+.shop-tabs.single .tab-static{
+  font-family: var(--mono); font-weight: 700;
+  font-size: 11px; letter-spacing: .42em;
+  color: var(--gold);
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255,214,107,.4);
+}
 .shop-tabs .tab{
   appearance:none; -webkit-appearance:none;
   background: transparent;
@@ -1228,10 +1240,8 @@ body.shake-rgb canvas#game{ filter: hue-rotate(8deg) saturate(1.15); }
     <div class="coin-pill"><span class="coin-pip"></span><span id="shopBal">0</span></div>
   </div>
 
-  <div class="shop-tabs">
-    <button class="tab active" data-tab="boarders">BOARDERS</button>
-    <button class="tab" data-tab="upgrades">UPGRADES</button>
-    <div class="tab-bar" id="tabBar"></div>
+  <div class="shop-tabs single">
+    <span class="tab-static">BIRDS</span>
   </div>
 
   <div class="rail-wrap">
@@ -1687,8 +1697,6 @@ function newRun({ daily=false, demo=false } = {}){
   G.milestones = { 500:false, 1000:false, 2000:false, 5000:false, 10000:false, 20000:false };
 
   for (let i = 1; i < 20; i++) tryAddStar(i * 220);
-  for (let i = 1; i < 12; i++) maybeAddRing(i * 380);
-  for (let i = 1; i < 10; i++) maybeAddUpdraft(i * 540);
   for (let i = 0; i < 18; i++) addCloud(i * 280 - 200, true);
   for (let i = 1; i < 30; i++) maybeAddTree(i * 110);
 
@@ -1723,17 +1731,12 @@ function runIntroSequence(){
 }
 
 function tryAddStar(worldX){
+  // Single tier of stars at moderate altitude — reachable with normal launches.
   if (G.rng() < 0.85){
     const gy = ground(worldX);
-    const minHeight = 90, maxHeight = 240;
+    const minHeight = 90, maxHeight = 220;
     const y = gy - (minHeight + G.rng() * (maxHeight - minHeight));
-    G.starsAhead.push({ x: worldX, y, taken: false, golden: G.rng() < 0.07, twinkle: G.rng()*TAU });
-  }
-  // Occasionally drop a higher "sky star" — reachable with chained launches + rings.
-  if (G.rng() < 0.16){
-    const gy = ground(worldX);
-    const skyHeight = 280 + G.rng() * 160;
-    G.starsAhead.push({ x: worldX, y: gy - skyHeight, taken: false, golden: G.rng() < 0.25, twinkle: G.rng()*TAU, sky: true });
+    G.starsAhead.push({ x: worldX, y, taken: false, golden: G.rng() < 0.10, twinkle: G.rng()*TAU });
   }
 }
 function maybeAddRing(worldX){
@@ -2073,29 +2076,7 @@ function update(realDt){
   }
   G.starsAhead = G.starsAhead.filter(s => s.x > G.px - G.W);
 
-  // Rings
-  while (!G.ringsAhead.length || G.ringsAhead[G.ringsAhead.length-1].x < farAheadX){
-    const lastX = G.ringsAhead.length ? G.ringsAhead[G.ringsAhead.length-1].x : G.px;
-    maybeAddRing(lastX + 320 + G.rng() * 280);
-  }
-  for (const r of G.ringsAhead){
-    if (r.taken) continue;
-    r.ang += realDt * 2;
-    const dx = r.x - G.px, dy = r.y - G.py;
-    if (dx*dx + dy*dy < 46*46){
-      r.taken = true;
-      const boost = r.hue === 'mint' ? 200 : 280;
-      G.vx = Math.min(MAX_VX, G.vx + boost);
-      G.vy = Math.min(G.vy, r.hue === 'mint' ? -200 : -320);
-      G.coins += 2;
-      addScore(35 * G.scoreMult);
-      spawnRingBurst(r.x, r.y, r.hue);
-      kickShake(7);
-      A.ring();
-      addShockwave(r.x, r.y, 90, r.hue === 'mint' ? 'rgba(130,255,177,' : 'rgba(255,111,168,');
-    }
-  }
-  G.ringsAhead = G.ringsAhead.filter(r => r.x > G.px - G.W);
+  // (Power-ups removed — pure Tiny Wings: only hills, bird, coins, stars)
 
   // Coins (with magnet)
   while (!G.coinsAhead.length || G.coinsAhead[G.coinsAhead.length-1].x < farAheadX){
@@ -2125,23 +2106,6 @@ function update(realDt){
     }
   }
   G.coinsAhead = G.coinsAhead.filter(c => c.x > G.px - G.W);
-
-  // Updrafts
-  while (!G.updraftsAhead.length || G.updraftsAhead[G.updraftsAhead.length-1].x < farAheadX){
-    const lastX = G.updraftsAhead.length ? G.updraftsAhead[G.updraftsAhead.length-1].x : G.px;
-    maybeAddUpdraft(lastX + 480 + G.rng() * 380);
-  }
-  for (const u of G.updraftsAhead){
-    if (u.used > 0.6) continue;
-    if (Math.abs(G.px - u.x) < u.w/2 && G.py > u.y - u.h && G.py < u.y + 50){
-      G.vy = Math.min(G.vy, -560);   // strong upward push but not space-launch
-      G.vx = Math.min(MAX_VX, G.vx + 50 * realDt);
-      u.used += realDt * 0.55;
-      if (Math.random() < 0.5) spawnUpdraftWisp(u.x + (Math.random()-0.5)*u.w, G.py);
-      if (u.used < 0.04) { A.whoosh(1.1); addScore(8 * G.scoreMult); }
-    }
-  }
-  G.updraftsAhead = G.updraftsAhead.filter(u => u.x > G.px - G.W);
 
   // Trees (cosmetic, near-mid layer)
   while (!G.trees.length || G.trees[G.trees.length-1].x < farAheadX){
@@ -2192,8 +2156,8 @@ function update(realDt){
     else $('#vignette').classList.remove('fast');
   }
 
-  // Time-of-day cycle
-  G.daytime += realDt * 0.045;
+  // (Palette is now distance-driven; daytime still ticks slowly only for animation phase like sun rays)
+  G.daytime += realDt * 0.5;
   if (G.distance > 80) $('#tip').classList.add('fade');
 
   // Shake decay
@@ -2629,10 +2593,20 @@ function lerpHex(a,b,t){
   return '#'+((r<<16)|(g<<8)|bl).toString(16).padStart(6,'0');
 }
 function getPalette(){
-  const phase = G.daytime % 4;
-  const i0 = Math.floor(phase) % SKY_PALETTES.length;
-  const i1 = (i0 + 1) % SKY_PALETTES.length;
-  const t = phase - Math.floor(phase);
+  // Tiny Wings "islands": each ~1000m of distance = new palette.
+  // Smooth crossfade across a 200m transition zone at the boundary.
+  const islandSize = 1000;
+  const transition = 200;
+  const d = Math.max(0, G.distance || 0);
+  const islandIdx = Math.floor(d / islandSize);
+  const within = d - islandIdx * islandSize;
+  // Crossfade only in the last `transition` meters of each island
+  const fade = within > islandSize - transition
+    ? (within - (islandSize - transition)) / transition
+    : 0;
+  const i0 = islandIdx % SKY_PALETTES.length;
+  const i1 = (islandIdx + 1) % SKY_PALETTES.length;
+  const t = fade;
   const p0 = SKY_PALETTES[i0], p1 = SKY_PALETTES[i1];
   return {
     sTop:  lerpHex(p0.sTop, p1.sTop, t),
@@ -2741,13 +2715,7 @@ function draw(dt){
   // Mid mountain layer
   drawHillLayer(ctx, pal.hMid, 0.42, 130, 100, true);
 
-  // Updrafts behind near hills
-  for (const u of G.updraftsAhead){
-    const sx = u.x - G.camX;
-    const sy = u.y - G.camY;
-    if (sx < -120 || sx > G.W + 120) continue;
-    drawUpdraft(ctx, sx, sy, u.w, u.h, u.phase);
-  }
+  // (Updrafts removed — pure Tiny Wings)
 
   // Trees on near layer (drawn behind ground line so they sit "in" the hill)
   drawTrees(ctx, pal);
@@ -2758,13 +2726,7 @@ function draw(dt){
   // Carved snow tracks (on top of snow)
   drawTracks(ctx);
 
-  // Boost rings
-  for (const r of G.ringsAhead){
-    if (r.taken) continue;
-    const sx = r.x - G.camX, sy = r.y - G.camY;
-    if (sx < -50 || sx > G.W + 50) continue;
-    drawRing(ctx, sx, sy, r.ang, r.hue);
-  }
+  // (Boost rings removed)
 
   // Stars
   for (const s of G.starsAhead){
@@ -3671,33 +3633,20 @@ function refreshMenu(){
   $('#titleCoins').textContent = formatNumber(store.totalCoins);
 }
 
-/* ─────  SHOP CAROUSEL  ───── */
-let shopTab = 'boarders';
+/* ─────  SHOP CAROUSEL — birds only (Tiny Wings purity)  ───── */
 
-function openShop(){ shopTab = 'boarders'; renderShop(); showScreen('#shopScreen'); positionTabBar(); }
+function openShop(){ renderShop(); showScreen('#shopScreen'); }
 function closeShop(){ showScreen('#titleScreen'); refreshMenu(); }
-
-function setShopTab(tab){
-  shopTab = tab;
-  document.querySelectorAll('.shop-tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  positionTabBar();
-  renderShop();
-  $('#cardRail').scrollTo({ left: 0, behavior: 'instant' });
-  setTimeout(updateDots, 50);
-}
-function positionTabBar(){
-  const bar = $('#tabBar');
-  if (!bar) return;
-  bar.style.transform = shopTab === 'boarders' ? 'translateX(0)' : 'translateX(100%)';
-}
+function setShopTab(){ /* no-op — single tab now */ }
+function positionTabBar(){ /* no-op */ }
 
 function renderShop(){
   $('#shopBal').textContent = formatNumber(store.totalCoins);
   const rail = $('#cardRail');
   rail.innerHTML = '';
-  const items = shopTab === 'boarders' ? Object.entries(BOARDERS) : Object.entries(UPGRADES);
+  const items = Object.entries(BOARDERS);
   items.forEach(([key, def]) => {
-    const card = (shopTab === 'boarders') ? makeBoarderCard(key, def) : makeUpgradeCard(key, def);
+    const card = makeBoarderCard(key, def);
     rail.appendChild(card);
   });
   // Dots
