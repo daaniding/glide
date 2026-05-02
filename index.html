@@ -1666,9 +1666,20 @@ function newRun({ daily=false, demo=false } = {}){
 
   // Drop-in intro: real runs start the player above ground with downward momentum,
   // demo runs start grounded so the autopilot can immediately track terrain.
-  // Start on the ground, already rolling — Tiny Wings opening
-  G.px = 0;
-  G.py = ground(0);
+  // Start in a valley with a downslope ahead — find the bottom of the first wave near origin.
+  // Sample 0..2000 px and pick the lowest point with a downslope ahead.
+  let bestX = 0, bestY = ground(0), foundValley = false;
+  for (let sx = 80; sx < 2400; sx += 20){
+    const here = ground(sx);
+    const ahead = ground(sx + 100);
+    // Looking for: this point is at or near a local min AND ahead is downhill
+    if (ahead > here + 8 && here >= bestY){
+      bestX = sx; bestY = here; foundValley = true;
+      break;  // first valley with downslope ahead is good enough
+    }
+  }
+  G.px = bestX;
+  G.py = bestY;
   G.vx = (demo ? 360 : START_VX + upStartVxBonus());
   G.vy = 0;
   G.introT = 0;
@@ -2023,25 +2034,28 @@ function update(realDt){
   // Body squash decays — set on landing impact
   G.squash *= Math.exp(-7 * realDt);
 
-  // Camera (lookahead + zoom out at high speed/frenzy)
-  const camSpeedFactor = (G.vx - MIN_VX) / (MAX_VX - MIN_VX);
-  // Higher altitude = more zoom-out = more sky visible (the Tiny Wings reveal)
-  const altitude = Math.max(0, ground(G.px) - G.py);
-  const altFactor = clamp(0, 1, altitude / 500);
-  G.targetZoom = G.frenzyT > 0 ? 0.76 : (1 - clamp(0, 0.40, camSpeedFactor * 0.18 + altFactor * 0.30));
-  G.camZoom += (G.targetZoom - G.camZoom) * Math.min(1, realDt * 3.5);
+  // Camera — keeps BOTH the player AND the ground in frame at all times.
+  // The higher you fly, the more the world zooms out so the map is always visible.
+  const groundHere = ground(G.px);
+  const altitude = Math.max(0, groundHere - G.py);
+  // Required vertical span (player at top + ground at bottom + headroom)
+  const desiredSpan = altitude + 220;                          // 220px headroom above + ground+below margin
+  const minZoom = 0.40, maxZoom = 1.0;
+  // Pick zoom so desiredSpan fits within ~70% of viewport height
+  const zoomFromAlt = clamp(minZoom, maxZoom, (G.H * 0.70) / desiredSpan);
+  G.targetZoom = G.frenzyT > 0 ? Math.min(zoomFromAlt, 0.76) : zoomFromAlt;
+  G.camZoom += (G.targetZoom - G.camZoom) * Math.min(1, realDt * 4);
 
-  const lookX = G.vx * 0.22;
-  const lookY = G.vy * 0.08 - altFactor * 90;
-  // Tiny Wings framing: bird at ~45% from top, lots of sky above + hills below
+  const lookX = G.vx * 0.20;
+  // Anchor camera so the GROUND sits at ~80% of screen height. Bird floats above it.
   const camTargetX = G.px - G.W * 0.30 / G.camZoom + lookX;
-  const camTargetY = G.py - G.H * 0.45 / G.camZoom + lookY;
+  const camTargetY = groundHere - G.H * 0.80 / G.camZoom;
   G.camX += (camTargetX - G.camX) * Math.min(1, realDt * 4.4);
   G.camY += (camTargetY - G.camY) * Math.min(1, realDt * 3.2);
 
   // Stash for HUD use
   G.altitude = altitude;
-  G.altFactor = altFactor;
+  G.altFactor = clamp(0, 1, altitude / 600);
 
   // Trail
   G.trail.push({ x: G.px, y: G.py, t: 0, frenzy: G.frenzyT > 0, ground: G.groundContact });
@@ -2815,14 +2829,20 @@ function draw(dt){
   // Bird flocks (drawn over sky, behind mountains)
   drawBirds(ctx);
 
-  // Distant mountain silhouettes (deepest layer)
+  // FAR-FAR mountain silhouettes (jagged distant peaks for depth and life)
+  drawDistantPeaks(ctx, pal, 0.10, 280);
+
+  // Distant mountain silhouettes
   drawHillLayer(ctx, pal.hFar, 0.18, 220, 60, true);
 
-  // Fog band (between distant and mid layers — sells depth)
+  // Fog band
   drawFogBand(ctx, pal);
 
   // Mid mountain layer
   drawHillLayer(ctx, pal.hMid, 0.42, 130, 100, true);
+
+  // Sparkle motes drifting in the mid-air (atmosphere)
+  drawSparkles(ctx, pal);
 
   // (Updrafts removed — pure Tiny Wings)
 
@@ -2998,6 +3018,73 @@ function drawCloud(ctx, x, y, s, color, pal){
   ctx.arc(34, -8, 18, 0, TAU);
   ctx.fill();
   ctx.restore();
+}
+
+/* Far-far jagged mountain silhouettes — adds depth and life */
+function drawDistantPeaks(ctx, pal, parallax, baseY){
+  ctx.save();
+  ctx.fillStyle = lerpHex(pal.hFar, pal.sBot, 0.55);
+  ctx.beginPath();
+  const yBase = G.H - baseY;
+  const camOff = G.camX * parallax;
+  ctx.moveTo(-200, G.H + 200);
+  // Generate jagged triangular peaks based on world position so they're stable.
+  const seed = (G.seed | 0) * 1e-6 + 4.7;
+  for (let x = -200; x <= G.W + 200; x += 18){
+    const wx = x + camOff;
+    // Multi-octave noise from sines for varied peak heights
+    const n = Math.sin(wx * 0.0026 + seed) * 0.5
+            + Math.sin(wx * 0.0058 + seed * 1.7) * 0.32
+            + Math.sin(wx * 0.011 + seed * 3.1) * 0.18;
+    const peakH = 60 + Math.max(0, n) * 80;
+    ctx.lineTo(x, yBase - peakH);
+  }
+  ctx.lineTo(G.W + 200, G.H + 200);
+  ctx.closePath();
+  ctx.fill();
+  // Snow caps on the highest tips
+  ctx.fillStyle = hexToRgba(pal.glow, 0.18);
+  ctx.beginPath();
+  for (let x = -200; x <= G.W + 200; x += 18){
+    const wx = x + camOff;
+    const n = Math.sin(wx * 0.0026 + seed) * 0.5
+            + Math.sin(wx * 0.0058 + seed * 1.7) * 0.32
+            + Math.sin(wx * 0.011 + seed * 3.1) * 0.18;
+    const peakH = 60 + Math.max(0, n) * 80;
+    if (n > 0.55){
+      const py = yBase - peakH;
+      ctx.moveTo(x - 6, py + 8); ctx.lineTo(x, py); ctx.lineTo(x + 6, py + 8);
+    }
+  }
+  ctx.fill();
+  ctx.restore();
+}
+
+/* Drifting sparkle motes — adds living atmosphere */
+function drawSparkles(ctx, pal){
+  // Lazily seed
+  if (!G._sparkles){
+    G._sparkles = [];
+    for (let i = 0; i < 24; i++){
+      G._sparkles.push({
+        x: Math.random() * G.W,
+        y: Math.random() * G.H * 0.85,
+        s: 0.8 + Math.random() * 1.4,
+        ph: Math.random() * TAU,
+      });
+    }
+  }
+  const t = G.daytime || 0;
+  for (const m of G._sparkles){
+    m.x -= 14 * (m.s * 0.5);  // slow drift left
+    m.y += Math.sin(t * 1.4 + m.ph) * 0.35;
+    if (m.x < -10){ m.x = G.W + 10; m.y = Math.random() * G.H * 0.85; }
+    const tw = 0.45 + Math.sin(t * 3 + m.ph) * 0.45;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, m.s * (0.7 + tw * 0.3), 0, TAU);
+    ctx.fillStyle = `rgba(${hexToRGB(pal.glow).r},${hexToRGB(pal.glow).g},${hexToRGB(pal.glow).b},${0.18 + tw * 0.4})`;
+    ctx.fill();
+  }
 }
 
 /* Painted hill layer with subtle top highlight */
@@ -3374,8 +3461,10 @@ function drawPlayer(ctx, pal){
   }
 }
 
-/* Tiny Wings bird — round, cute, with a striped belly, beak, eye, and wings
-   that visibly tuck (pressed) or extend (gliding). Skins reskin body/accent colors. */
+/* GLIDE GLIDER — distinctive new character (NOT a bird).
+   Angular streamlined arrow/teardrop with pulsing core, two folding wings that
+   extend in glide pose (small, sharp), and energy wisps streaming back at speed.
+   Skins reskin the core, accent (wings) and trail color. */
 function drawBoarder(ctx, x, y, rot, isGhost, skinOverride){
   const skin = skinOverride || activeBoard();
   const wingExt = isGhost ? 0 : (G.wingExt || 0);
@@ -3415,118 +3504,96 @@ function drawBoarder(ctx, x, y, rot, isGhost, skinOverride){
 
   const bodyCol  = isGhost ? 'rgba(20,8,40,.55)' : skin.body;
   const accent   = skin.scarf;
-  const beakCol  = '#FFAA40';
 
-  // BACK WING (drawn behind body, partially visible) — tucked when pressed, extended in glide
+  // ENERGY WISPS — back-streaming streamers, longer when extended (glide)
   if (!isGhost){
-    const wKx = -8 - 12 * wingExt;
-    const wKy = -2 - 4 * wingExt;
-    const wTipx = -4 - 16 * wingExt;
-    const wTipy = -6 - 14 * wingExt - flap * 2 * wingExt;
-    ctx.fillStyle = bodyCol;
-    ctx.beginPath();
-    ctx.moveTo(-2, -2);
-    ctx.quadraticCurveTo(wKx, wKy, wTipx, wTipy);
-    ctx.quadraticCurveTo(-6, 0, -2, 4);
-    ctx.closePath();
-    ctx.fill();
-    // Wing accent stripe
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 1.1;
-    ctx.beginPath();
-    ctx.moveTo(-3, -1);
-    ctx.quadraticCurveTo(wKx + 1, wKy + 1, wTipx + 1, wTipy + 2);
-    ctx.stroke();
+    const accRGB = hexToRGB(G.frenzyT > 0 ? '#FF6B3F' : accent);
+    const speedT = clamp(0, 1, (G.speedNorm || 0));
+    const wispLen = 14 + wingExt * 18 + speedT * 22;
+    for (let i = 0; i < 3; i++){
+      const off = (i - 1) * 3;
+      const wob = Math.sin((G.daytime || 0) * 12 + i * 1.4) * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(-6, off);
+      ctx.quadraticCurveTo(-12, off + wob, -wispLen, off * 1.4 + wob * 1.6);
+      ctx.lineWidth = 2.4 - i * 0.5;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = `rgba(${accRGB.r},${accRGB.g},${accRGB.b},${0.85 - i * 0.22})`;
+      ctx.stroke();
+    }
   }
 
-  // BODY — round, ~13px radius
+  // CORE BODY — sharp angular teardrop / arrowhead pointing forward
+  // Pointier when pressed (dive), broader when wings extended (glide)
+  const tipFwd  = 16 - wingExt * 2;       // forward tip x
+  const wingX   = -2;                     // base x
+  const wingY   = 7 + wingExt * 6;        // wing spread (extends with glide)
+  const tailX   = -10 - wingExt * 2;
   ctx.beginPath();
-  ctx.arc(0, 0, 13, 0, TAU);
+  ctx.moveTo(tipFwd, 0);
+  ctx.quadraticCurveTo(wingX, -wingY * 0.95, tailX, -wingY * 0.4);
+  ctx.lineTo(tailX, wingY * 0.4);
+  ctx.quadraticCurveTo(wingX, wingY * 0.95, tipFwd, 0);
+  ctx.closePath();
   ctx.fillStyle = bodyCol;
   ctx.fill();
 
   if (!isGhost){
-    // BELLY — light cream patch with horizontal stripes (the signature Tiny Wings bird marking)
-    const bellyGrad = ctx.createRadialGradient(0, 4, 2, 0, 4, 12);
-    bellyGrad.addColorStop(0, '#FFF1DF');
-    bellyGrad.addColorStop(1, hexToRgba('#FFF1DF', 0.85));
-    ctx.fillStyle = bellyGrad;
+    // ACCENT EDGE — bright outline along the leading edge
     ctx.beginPath();
-    ctx.ellipse(1, 4, 8, 7, 0, 0, TAU);
-    ctx.fill();
+    ctx.moveTo(tipFwd, 0);
+    ctx.quadraticCurveTo(wingX, -wingY * 0.95, tailX, -wingY * 0.4);
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = accent;
+    ctx.stroke();
 
-    // Belly stripes — 3 thin curved lines in the accent color
-    ctx.strokeStyle = hexToRgba(accent, 0.7);
-    ctx.lineWidth = 1.1;
-    ctx.lineCap = 'round';
-    for (let i = 0; i < 3; i++){
-      const yy = 1 + i * 2.5;
-      ctx.beginPath();
-      ctx.moveTo(-5.5, yy + 1);
-      ctx.quadraticCurveTo(1, yy - 0.5, 6.5, yy + 1);
-      ctx.stroke();
-    }
+    // PULSING CORE — small bright dot near the front, throbs with frenzy & speed
+    const corePulse = 2.6 + Math.sin((G.daytime || 0) * 22) * 0.4;
+    const coreCol = G.frenzyT > 0 ? '#FF6B3F' : accent;
+    ctx.beginPath();
+    ctx.arc(7, 0, corePulse, 0, TAU);
+    ctx.shadowColor = hexToRgba(coreCol, 0.9);
+    ctx.shadowBlur = skin.glow ? 14 : 8;
+    ctx.fillStyle = coreCol;
+    ctx.fill();
+    ctx.shadowBlur = 0;
 
-    // Top of head — small accent crest
-    ctx.fillStyle = accent;
+    // Inner shine pip
     ctx.beginPath();
-    ctx.moveTo(-2, -11);
-    ctx.quadraticCurveTo(0, -16 - flap, 4, -11);
-    ctx.quadraticCurveTo(2, -10, 0, -10);
-    ctx.closePath();
-    ctx.fill();
-
-    // EYE — white sclera + dark pupil + tiny shine
-    ctx.beginPath();
-    ctx.arc(5, -3, 3, 0, TAU);
-    ctx.fillStyle = '#FFF1DF';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(6, -3, 1.6, 0, TAU);
-    ctx.fillStyle = '#1B0C29';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(6.4, -3.5, 0.6, 0, TAU);
+    ctx.arc(7.6, -0.6, 0.9, 0, TAU);
     ctx.fillStyle = '#FFFFFF';
     ctx.fill();
 
-    // BEAK — small triangle pointing forward
-    ctx.fillStyle = beakCol;
-    ctx.beginPath();
-    ctx.moveTo(11, -1);
-    ctx.lineTo(15, 0.5);
-    ctx.lineTo(11, 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(120,60,12,.45)';
-    ctx.lineWidth = 0.7;
-    ctx.beginPath();
-    ctx.moveTo(11, 0.5); ctx.lineTo(14, 0.7);
-    ctx.stroke();
+    // FOLDING WINGS — sharp side fins, extended in glide pose
+    if (wingExt > 0.05){
+      const k = wingExt;
+      ctx.fillStyle = hexToRgba(accent, 0.6 + 0.4 * k);
+      // Top wing
+      ctx.beginPath();
+      ctx.moveTo(-1, -wingY * 0.55);
+      ctx.lineTo(-6 - 4 * k, -wingY * 0.55 - 8 * k);
+      ctx.lineTo(-12 - 4 * k, -wingY * 0.45 - 4 * k);
+      ctx.closePath();
+      ctx.fill();
+      // Bottom wing (mirror)
+      ctx.beginPath();
+      ctx.moveTo(-1, wingY * 0.55);
+      ctx.lineTo(-6 - 4 * k, wingY * 0.55 + 8 * k);
+      ctx.lineTo(-12 - 4 * k, wingY * 0.45 + 4 * k);
+      ctx.closePath();
+      ctx.fill();
+    }
 
-    // FRONT WING — overlays the body when extended, tucks behind when pressed
-    const fwTipx = 6 + 10 * wingExt;
-    const fwTipy = 6 + 8 * wingExt + flap * 1.5;
-    ctx.fillStyle = bodyCol;
-    ctx.beginPath();
-    ctx.moveTo(2, 4);
-    ctx.quadraticCurveTo(8 + 4 * wingExt, 6, fwTipx, fwTipy);
-    ctx.quadraticCurveTo(4, 8, 0, 7);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 1.1;
-    ctx.beginPath();
-    ctx.moveTo(3, 5);
-    ctx.quadraticCurveTo(7 + 4 * wingExt, 6.5, fwTipx - 1, fwTipy);
-    ctx.stroke();
-
-    // Glow rim for halo skins
+    // Halo rim for glow skins
     if (skin.halo || skin.glow){
-      ctx.strokeStyle = hexToRgba(accent, 0.55);
+      ctx.strokeStyle = hexToRgba(accent, 0.45);
       ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(0, 0, 13.6, 0, TAU);
+      ctx.moveTo(tipFwd + 2, 0);
+      ctx.quadraticCurveTo(wingX, -wingY * 1.1, tailX - 2, -wingY * 0.5);
+      ctx.lineTo(tailX - 2, wingY * 0.5);
+      ctx.quadraticCurveTo(wingX, wingY * 1.1, tipFwd + 2, 0);
+      ctx.closePath();
       ctx.stroke();
     }
   }
