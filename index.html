@@ -1608,14 +1608,14 @@ function resize(){
   if (G.snowfall.length === 0) seedSnowfall();
 }
 
-/* ─────  TERRAIN — Tiny Wings long gentle waves
-   Main wavelength: ~3500 px (very long, smooth flowing hills)
-   Medium variation gives mild texture; no fine layer to keep slopes smooth.
-   Worst-case slope angle ~22° instead of ~40° before. */
+/* ─────  TERRAIN — Tiny Wings rolling waves with REAL valleys
+   Main wave: 200 amp, ~4400 px wavelength → big rolling hills with deep valleys
+   Medium variation: 36 amp, ~1500 px → adds smaller waves stacked on the big ones
+   Worst-case slope angle ~26° (still rideable). */
 function makeGroundFn(seed){
   const rng = mulberry32(seed);
-  const main = { amp: 110 + rng() * 30, freq: 0.0018 + rng() * 0.0004, phase: rng() * TAU };
-  const med  = { amp: 22  + rng() * 12, freq: 0.0058 + rng() * 0.0020, phase: rng() * TAU };
+  const main = { amp: 200 + rng() * 50, freq: 0.0014 + rng() * 0.0004, phase: rng() * TAU };
+  const med  = { amp: 36  + rng() * 18, freq: 0.0046 + rng() * 0.0014, phase: rng() * TAU };
   return (x) => {
     return Math.sin(x * main.freq + main.phase) * main.amp
          + Math.sin(x * med.freq  + med.phase ) * med.amp;
@@ -1649,17 +1649,12 @@ function newRun({ daily=false, demo=false } = {}){
 
   // Drop-in intro: real runs start the player above ground with downward momentum,
   // demo runs start grounded so the autopilot can immediately track terrain.
-  if (!demo){
-    G.px = 0;
-    G.py = ground(0) - 320;
-    G.vx = START_VX + upStartVxBonus();
-    G.vy = 80;
-    G.introT = 1.4;
-  } else {
-    G.px = 0; G.py = ground(0) - 30;
-    G.vx = 320; G.vy = 0;
-    G.introT = 0;
-  }
+  // Start on the ground, already rolling — Tiny Wings opening
+  G.px = 0;
+  G.py = ground(0);
+  G.vx = (demo ? 360 : START_VX + upStartVxBonus());
+  G.vy = 0;
+  G.introT = 0;
   G.rot = 0; G.scarfRot = 0;
   G.tracks = [];
   G.birds = [];
@@ -1705,7 +1700,7 @@ function newRun({ daily=false, demo=false } = {}){
     $('#pauseHint').classList.remove('hidden');
     $('#hudTop').style.opacity = '1';
     $('#gaugeRow').style.opacity = '1';
-    runIntroSequence();
+    // No countdown — Tiny Wings starts immediately on tap
   } else {
     $('#hudTop').style.opacity = '0';
     $('#gaugeRow').style.opacity = '0';
@@ -1805,16 +1800,15 @@ function seedSnowfall(){
    • On ground: hug the slope, momentum preserved, slope gravity is GENTLE (0.5×) so uphills don't grind you to a halt
    • You always have a baseline 220 forward momentum, so you can recover from a bad jump
    • Land cleanly on a downslope = PERFECT SLIDE */
-const GRAVITY            = 1500;
-const GLIDE_GRAV         = 0.50;
-const DIVE_PULL          = 2300;
-const MAX_VX             = 1240;
-const MIN_VX             = 220;        // never feels stuck — the Tiny Wings baseline
-const START_VX           = 420;        // first wave already moving
-const DRAG_AIR_PER_SEC   = 0.05;
-const DRAG_VERT_PER_SEC  = 0.16;
-const BOUNCE_LOSS        = 0.92;       // energy loss on impact only
-const SLOPE_GRAVITY_GAIN = 0.55;       // ⭐ KEY FIX: slope assist is HALF strength → forgiving uphills
+const GRAVITY            = 1700;       // a touch heavier — gives more dive punch
+const GLIDE_GRAV         = 0.45;       // wings out → 45% gravity for clean glide arcs
+const DIVE_PULL          = 2600;       // big dive force — pressing on a downslope catapults you forward
+const MAX_VX             = 1500;       // higher ceiling for the rush
+const MIN_VX             = 280;        // baseline forward — never feels stuck
+const START_VX           = 500;        // first wave already flying
+const DRAG_AIR_PER_SEC   = 0.04;       // very low forward drag — momentum carries
+const DRAG_VERT_PER_SEC  = 0.18;
+const BOUNCE_LOSS        = 0.94;       // energy loss on impact only
 const ROTATE_SNAP = 9;
 const COYOTE_TIME = 0.22;
 const PERFECT_SPEED_MIN = 280;
@@ -1849,25 +1843,38 @@ function update(realDt){
 
   const dragFactor = (rate) => Math.exp(-rate * realDt);
 
+  // ⭐ TINY WINGS UNIFIED PHYSICS:
+  //   Gravity always integrates into vy.
+  //   Pressing adds DIVE_PULL (extra downward force) ALWAYS — air OR ground.
+  //   Ground collision projects vy onto slope tangent, which converts downward force
+  //   into FORWARD acceleration on downslopes (the Tiny Wings "dive into the wave" mechanic).
+  //   Wings out (in air, no press) = reduced gravity for graceful arcs.
+
+  // Vertical force
+  let gravAcc;
+  if (G.groundContact || G.pressed){
+    gravAcc = GRAVITY;                    // full gravity when grounded or actively diving
+  } else {
+    gravAcc = GRAVITY * GLIDE_GRAV;       // wings out in air → ~50% gravity
+  }
+  G.vy += gravAcc * dt;
+  if (G.pressed){
+    G.vy += DIVE_PULL * dt;               // dive force, projects to forward speed on downslopes
+    if (!G.groundContact){
+      G.diveSeconds += dt;
+      if (G.diveSeconds > 0.05 && Math.random() < 0.13) A.whoosh(0.5 + Math.min(1, G.vx/MAX_VX));
+    }
+  } else {
+    G.diveSeconds = Math.max(0, G.diveSeconds - dt * 2);
+  }
+
+  // Drag — only in air
   if (!G.groundContact){
     G.airTime += dt;
     if (G.airTime > G.airTimeBest) G.airTimeBest = G.airTime;
-    if (G.pressed){
-      // DIVE — wings tucked, full plummet
-      G.vy += (GRAVITY + DIVE_PULL) * dt;
-      G.diveSeconds += dt;
-      if (G.diveSeconds > 0.05 && Math.random() < 0.13) A.whoosh(0.5 + Math.min(1, G.vx/MAX_VX));
-    } else {
-      // GLIDE — wings extended, ~half gravity (no perpetual lift, no skill bypass)
-      G.vy += GRAVITY * GLIDE_GRAV * dt;
-      G.vy *= dragFactor(DRAG_VERT_PER_SEC);
-      G.diveSeconds = Math.max(0, G.diveSeconds - dt * 2);
-    }
-    // Air drag bleeds momentum slowly while flying
     G.vx *= dragFactor(DRAG_AIR_PER_SEC);
+    if (!G.pressed) G.vy *= dragFactor(DRAG_VERT_PER_SEC);
   } else {
-    // ON GROUND — Tiny Wings roll: NO drag, NO bleed, momentum is preserved.
-    // Speed only changes via slope (gravity component) and one-time impact loss when hitting ground.
     G.airTime = 0;
   }
 
@@ -1896,11 +1903,7 @@ function update(realDt){
     G.vx = tx * vTan * loss;
     G.vy = ty * vTan * loss;
     G.py = gy;
-
-    // Slope assist — gravity along the surface tangent, scaled DOWN (Tiny Wings is forgiving on uphills).
-    const slopeGravity = GRAVITY * SLOPE_GRAVITY_GAIN * Math.sin(angle);
-    G.vx += Math.cos(angle) * slopeGravity * dt;
-    G.vy += Math.sin(angle) * slopeGravity * dt;
+    // (No explicit slope-gravity term — projection of integrated gravity already gives slope acceleration)
 
     // Belly-flop ends run — only catastrophic vertical impact INTO a sharp upslope
     if (!G.demo && hitVy > 1900 && slope > 0.85){
@@ -1976,10 +1979,11 @@ function update(realDt){
   G.targetZoom = G.frenzyT > 0 ? 0.78 : (1 - clamp(0, 0.32, camSpeedFactor * 0.20 + altFactor * 0.18));
   G.camZoom += (G.targetZoom - G.camZoom) * Math.min(1, realDt * 3.5);
 
-  const lookX = G.vx * 0.20;
-  const lookY = G.vy * 0.14 - altFactor * 80;        // bias camera UP when soaring
-  const camTargetX = G.px - G.W * 0.30 / G.camZoom + lookX;
-  const camTargetY = G.py - G.H * 0.50 / G.camZoom + lookY;
+  const lookX = G.vx * 0.22;
+  const lookY = G.vy * 0.10 - altFactor * 60;
+  // Player sits at 28% width (lots of horizon ahead) and 65% height (mostly sky shows above)
+  const camTargetX = G.px - G.W * 0.28 / G.camZoom + lookX;
+  const camTargetY = G.py - G.H * 0.65 / G.camZoom + lookY;
   G.camX += (camTargetX - G.camX) * Math.min(1, realDt * 4.4);
   G.camY += (camTargetY - G.camY) * Math.min(1, realDt * 3.2);
 
