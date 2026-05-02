@@ -1834,9 +1834,9 @@ const MIN_VX             = 0;          // ⚠️  no artificial floor — bird C
 const START_VX           = 480;
 const STALL_VX           = 60;         // below this = "stalled"
 const STALL_TIME         = 2.5;        // seconds of stall before the day ends
-const DRAG_AIR_PER_SEC   = 0.04;       // very low forward drag — momentum carries
+const DRAG_AIR_PER_SEC   = 0.06;       // balanced — momentum carries between dives
 const DRAG_VERT_PER_SEC  = 0.18;
-const BOUNCE_LOSS        = 0.94;       // energy loss on impact only
+const BOUNCE_LOSS        = 0.985;      // very low impact loss — bird skips off slopes like a stone on water
 const ROTATE_SNAP = 9;
 const COYOTE_TIME = 0.22;
 const PERFECT_SPEED_MIN = 280;
@@ -1883,17 +1883,23 @@ function update(realDt){
   if (G.groundContact || G.pressed){
     gravAcc = GRAVITY;                    // full gravity when grounded or actively diving
   } else {
-    gravAcc = GRAVITY * GLIDE_GRAV;       // wings out in air → ~50% gravity
+    gravAcc = GRAVITY * GLIDE_GRAV;       // wings out in air → reduced gravity
   }
   G.vy += gravAcc * dt;
   if (G.pressed){
-    G.vy += DIVE_PULL * dt;               // dive force, projects to forward speed on downslopes
+    G.vy += DIVE_PULL * dt;
     if (!G.groundContact){
       G.diveSeconds += dt;
       if (G.diveSeconds > 0.05 && Math.random() < 0.13) A.whoosh(0.5 + Math.min(1, G.vx/MAX_VX));
     }
   } else {
     G.diveSeconds = Math.max(0, G.diveSeconds - dt * 2);
+    // ⭐ TINY WINGS WING-LIFT — speed-coupled. Fast = stay airborne ('always flying a bit').
+    // Slow = lift collapses, you fall and stall. This is the SKILL loop.
+    if (!G.groundContact){
+      const lift = Math.min(310, G.vx * 0.46);   // caps near vx 670; below ~200 you sink hard
+      G.vy -= lift * dt;
+    }
   }
 
   // Drag — only in air
