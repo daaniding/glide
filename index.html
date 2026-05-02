@@ -1181,8 +1181,6 @@ body.shake-rgb canvas#game{ filter: hue-rotate(8deg) saturate(1.15); }
   <div class="mult" id="mult">×1</div>
 </div>
 
-<div class="air-combo" id="airCombo"><span class="dot"></span><span>AIR</span><span class="v" id="airVal">0.0s</span></div>
-<div class="alt-bar" id="altBar"><div class="alt-fill" id="altFill"></div><div class="alt-label">ALT</div><div class="alt-val" id="altVal">0m</div></div>
 
 <div class="banner" id="flashBanner">SOAR</div>
 <div class="intro" id="intro"><div class="intro-eyebrow">— DROP IN —</div><div class="intro-go" id="introGo">READY</div></div>
@@ -1324,13 +1322,11 @@ const store = {
 };
 function persist(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch {} }
 
-/* ─────  UPGRADES — definitions + effect helpers  ───── */
+/* ─────  UPGRADES — minimal, calm, no skill bypass  ───── */
 const UPGRADES = {
-  quickStart:  { name:'Quick Start',  desc:'Begin elke run met meer vaart.',         costs:[80, 200, 500],   max:3 },
-  magnet:      { name:'Coin Magnet',  desc:'Coins worden naar je toe getrokken.',    costs:[100, 250, 600],  max:3 },
-  glideWings:  { name:'Sky Wings',    desc:'Iets meer hangtijd in de lucht.',        costs:[150, 350, 800],  max:3 },
-  boost:       { name:'Boost Master', desc:'Boost-rings geven extra forward kick.',  costs:[200, 500, 1000], max:3 },
-  frenzyKing:  { name:'Frenzy King',  desc:'Frenzy-multiplier wordt \xD74, \xD75, \xD76.', costs:[300, 700, 1500], max:3 },
+  quickStart: { name:'Quick Start', desc:'Klein zetje aan het begin van elke run.',  costs:[150],           max:1 },
+  magnet:     { name:'Coin Magnet', desc:'Coins worden naar je toe getrokken.',      costs:[100, 250, 600], max:3 },
+  souvenir:   { name:'Souvenir',    desc:'+20% coins per run — sparen gaat sneller.', costs:[400], max:1 },
 };
 const BOARDERS = {
   classic: { name:'Classic', desc:'De originele rider met gouden sjaal.',  cost: 0,    body:'#13061F', scarf:'#FFD66B', trail:'rgba(255,238,170,', glow:false, alpha:1 },
@@ -1344,11 +1340,10 @@ const owns = (key) => store.boards.includes(key);
 const activeBoard = () => BOARDERS[store.activeBoard] || BOARDERS.classic;
 
 const upLevel = (key) => store.upgrades[key] || 0;
-const upStartVxBonus = () => upLevel('quickStart') * 60;     // +60/lvl
-const upMagnetRadius = () => 60 + upLevel('magnet') * 65;   // base 60, +65/lvl → up to 255
-const upGlideGrav    = () => Math.max(0.55, GLIDE_GRAV - upLevel('glideWings') * 0.07);
-const upBoostMul     = () => 1 + upLevel('boost') * 0.20;    // 1.0, 1.2, 1.4, 1.6
-const upFrenzyMul    = () => 3 + upLevel('frenzyKing');      // 3, 4, 5, 6
+const upStartVxBonus = () => upLevel('quickStart') * 30;     // small +30 vx (was up to +180)
+const upMagnetRadius = () => 60 + upLevel('magnet') * 65;    // 60 → 255
+const upCoinMul      = () => 1 + upLevel('souvenir') * 0.20; // ×1.20 with souvenir
+// Removed helpers: upGlideGrav (skill bypass), upBoostMul (OP), upFrenzyMul (OP)
 
 /* ─────  AUDIO (WebAudio synth)  ───── */
 const A = {
@@ -1706,7 +1701,6 @@ function newRun({ daily=false, demo=false } = {}){
   $('#tip').classList.remove('fade');
   $('#mult').classList.remove('show');
   $('#vignette').classList.remove('fast');
-  $('#airCombo').classList.remove('show');
   if (!demo) {
     $('#modeLabel').textContent = daily ? `DAILY · #${dayNumber()}` : 'CLASSIC';
     hideAllScreens();
@@ -1816,11 +1810,11 @@ const GRAVITY     = 1450;
 const GLIDE_GRAV  = 0.50;          // wings-out feel — half gravity, you arc smoothly across waves
 const DIVE_PULL   = 2400;          // pressing = full plummet
 const MAX_VX      = 1240;
-const MIN_VX      = 140;
-const START_VX    = 360;
-const DRAG_AIR_PER_SEC  = 0.08;    // momentum lasts
+const MIN_VX      = 80;            // can really slow down on uphills if you mistime, but never zero
+const START_VX    = 380;           // start with comfortable speed
+const DRAG_AIR_PER_SEC  = 0.06;    // very slow air bleed
 const DRAG_VERT_PER_SEC = 0.16;    // mild vertical drag during glide
-const BOUNCE_LOSS = 0.985;         // very sticky to slope — no jagged bounces on small bumps
+const BOUNCE_LOSS = 0.92;          // proper energy loss on impact, but only ONCE per landing
 const ROTATE_SNAP = 9;
 const COYOTE_TIME = 0.22;
 const PERFECT_SPEED_MIN = 280;
@@ -1859,30 +1853,25 @@ function update(realDt){
     G.airTime += dt;
     if (G.airTime > G.airTimeBest) G.airTimeBest = G.airTime;
     if (G.pressed){
-      // DIVE: full gravity + dive pull, no vertical drag (full plummet)
+      // DIVE — wings tucked, full plummet
       G.vy += (GRAVITY + DIVE_PULL) * dt;
       G.diveSeconds += dt;
       if (G.diveSeconds > 0.05 && Math.random() < 0.13) A.whoosh(0.5 + Math.min(1, G.vx/MAX_VX));
     } else {
-      // FREE FALL — full-ish gravity (reducible by Sky Wings upgrade), mild vertical drag.
-      G.vy += GRAVITY * upGlideGrav() * dt;
+      // GLIDE — wings extended, ~half gravity (no perpetual lift, no skill bypass)
+      G.vy += GRAVITY * GLIDE_GRAV * dt;
       G.vy *= dragFactor(DRAG_VERT_PER_SEC);
       G.diveSeconds = Math.max(0, G.diveSeconds - dt * 2);
-      if (G.airTime > 0.4 && G.vx > 600 && Math.random() < 0.02) A.whoosh(0.35);
     }
-    if (G.airTime > 0.45){
-      $('#airCombo').classList.add('show');
-      $('#airVal').textContent = G.airTime.toFixed(1) + 's';
-    }
+    // Air drag bleeds momentum slowly while flying
+    G.vx *= dragFactor(DRAG_AIR_PER_SEC);
   } else {
+    // ON GROUND — Tiny Wings roll: NO drag, NO bleed, momentum is preserved.
+    // Speed only changes via slope (gravity component) and one-time impact loss when hitting ground.
     G.airTime = 0;
-    $('#airCombo').classList.remove('show');
   }
 
-  // Horizontal drag (always)
-  G.vx *= dragFactor(DRAG_AIR_PER_SEC);
-
-  if (G.frenzyT > 0) G.vx = Math.min(MAX_VX, G.vx + 240 * dt);
+  if (G.frenzyT > 0) G.vx = Math.min(MAX_VX, G.vx + 200 * dt);
   G.vx = Math.max(MIN_VX, Math.min(MAX_VX, G.vx));
   G.px += G.vx * dt;
   G.py += G.vy * dt;
@@ -1901,11 +1890,15 @@ function update(realDt){
     const hitVy = G.vy;
     const tx = Math.cos(angle), ty = Math.sin(angle);
     const vTan = G.vx * tx + G.vy * ty;
-    G.vx = tx * vTan * BOUNCE_LOSS;
-    G.vy = ty * vTan * BOUNCE_LOSS;
+    // CRITICAL: only apply impact loss on the frame we LAND. Rolling preserves all momentum.
+    const isImpact = !G.prevGroundContact;
+    const loss = isImpact ? BOUNCE_LOSS : 1.0;
+    G.vx = tx * vTan * loss;
+    G.vy = ty * vTan * loss;
     G.py = gy;
 
-    // Slope assist (rolling downhill = gain energy)
+    // Slope assist — gravity along the surface tangent. Going down = gain, going up = lose.
+    // This is the ONLY way speed changes while rolling. Pure Tiny Wings.
     const slopeGravity = GRAVITY * Math.sin(angle);
     G.vx += Math.cos(angle) * slopeGravity * dt;
     G.vy += Math.sin(angle) * slopeGravity * dt;
@@ -2067,10 +2060,9 @@ function update(realDt){
     const dx = r.x - G.px, dy = r.y - G.py;
     if (dx*dx + dy*dy < 46*46){
       r.taken = true;
-      const mul = upBoostMul();
-      const boost = (r.hue === 'mint' ? 200 : 280) * mul;
+      const boost = r.hue === 'mint' ? 200 : 280;
       G.vx = Math.min(MAX_VX, G.vx + boost);
-      G.vy = Math.min(G.vy, (r.hue === 'mint' ? -200 : -320) * mul);
+      G.vy = Math.min(G.vy, r.hue === 'mint' ? -200 : -320);
       G.coins += 2;
       addScore(35 * G.scoreMult);
       spawnRingBurst(r.x, r.y, r.hue);
@@ -2172,32 +2164,8 @@ function update(realDt){
   if (!G.demo){
     $('#coinHud').textContent = formatNumber(G.coins);
     $('#speedFill').style.width = (G.speedNorm * 100) + '%';
-    if (G.speedNorm > 0.45) $('#vignette').classList.add('fast');
+    if (G.speedNorm > 0.55) $('#vignette').classList.add('fast');
     else $('#vignette').classList.remove('fast');
-    if (G.speedNorm > 0.7) document.body.classList.add('shake-rgb');
-    else document.body.classList.remove('shake-rgb');
-
-    // Altitude HUD — visible whenever you're meaningfully above ground
-    const altBar = $('#altBar');
-    if (G.altitude > 60){
-      altBar.classList.add('show');
-      altBar.style.setProperty('--alt', clamp(0, 100, (G.altitude / 900) * 100) + '%');
-      $('#altVal').textContent = Math.floor(G.altitude / 8) + 'm';
-    } else {
-      altBar.classList.remove('show');
-    }
-
-    // BIG AIR reward — peak of a launch when you're meaningfully above ground
-    if (!G._soarBannerT) G._soarBannerT = 0;
-    G._soarBannerT -= realDt;
-    if (G.altitude > 280 && G.vy > -40 && G.vy < 30 && G.vx > 540 && G._soarBannerT <= 0){
-      G._soarBannerT = 3.5;
-      showBanner('BIG AIR', 'cool');
-      addScore(40 * G.scoreMult);
-      G.coins += 5;
-      flashScreen(0.25);
-      A.boom();
-    }
   }
 
   // Time-of-day cycle
@@ -2255,7 +2223,7 @@ function triggerPerfect(){
   if (G.perfStreak >= 3){
     G.frenzyT = 3.6;
     G.frenzyCount += 1;
-    G.scoreMult = upFrenzyMul();
+    G.scoreMult = 3;
     G.coins += 8;
     $('#mult').textContent = '×' + G.scoreMult;
     $('#mult').classList.add('show', 'frenzy');
@@ -2290,7 +2258,7 @@ function triggerPerfectSlide(slope, hitVy){
   if (G.perfStreak >= 3){
     G.frenzyT = 4.0;
     G.frenzyCount += 1;
-    G.scoreMult = upFrenzyMul();
+    G.scoreMult = 3;
     G.coins += 10;
     $('#mult').textContent = '×' + G.scoreMult;
     $('#mult').classList.add('show', 'frenzy');
@@ -2549,7 +2517,8 @@ function burstAber(intensity){
 function endRun(){
   G.running = false;
   store.totalRuns += 1;
-  store.totalCoins += G.coins;
+  G.coinsBanked = Math.round(G.coins * upCoinMul());
+  store.totalCoins += G.coinsBanked;
   const dist = Math.floor(G.distance);
   if (dist > store.best) store.best = dist;
   if (G.perf > store.bestPerf) store.bestPerf = G.perf;
@@ -2579,7 +2548,7 @@ function endRun(){
   $('#goFrenzy').textContent = G.frenzyCount;
   $('#goStars').textContent  = G.stars + (G.starsGold > 0 ? ` ★${G.starsGold}` : '');
   $('#goSpeed').textContent  = Math.round(G.topSpeed);
-  $('#goCoins').textContent  = '+' + G.coins;
+  $('#goCoins').textContent  = '+' + G.coinsBanked + (G.coinsBanked > G.coins ? ` (×${upCoinMul().toFixed(2)})` : '');
   $('#goTotalCoins').textContent = formatNumber(store.totalCoins);
   $('#shareLine').textContent = buildShareText();
   $('#pauseHint').classList.add('hidden');
@@ -2815,8 +2784,9 @@ function draw(dt){
   drawSnowfall(ctx);
 
   // Speed lines (overlay) — kick in at modest speed already
-  if (G.speedNorm > 0.30 && G.running && !G.demo){
-    drawSpeedLines(ctx, G.speedNorm);
+  // Speed lines only at really high speeds — keep the picture calm
+  if (G.speedNorm > 0.65 && G.running && !G.demo){
+    drawSpeedLines(ctx, (G.speedNorm - 0.65) / 0.35);
   }
 }
 
