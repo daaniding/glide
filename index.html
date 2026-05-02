@@ -1585,7 +1585,11 @@ const G = {
   coinsAhead: [],
   // visual: wings/cape extension (0 tucked, 1 extended) + landing squash
   wingExt: 0,
-  squash: 0,        // 0 → no squash, 1 → max squash, decays
+  squash: 0,
+  // Tiny Wings day-timer: the sun descends; when it sets, the day ends.
+  // Perfect slides + good play extend the day.
+  dayTime: 0,
+  maxDayTime: 28,    // initial seconds (a generous run lasts a while)
 };
 
 function mulberry32(seed){
@@ -1678,6 +1682,9 @@ function newRun({ daily=false, demo=false } = {}){
   G.coins = 0;
   G.coinsAhead = [];
   for (let i = 1; i < 10; i++) tryAddCoin(i * 320);
+  // Reset day timer
+  G.maxDayTime = 28;
+  G.dayTime = G.maxDayTime;
   G.camX = G.px - G.W * 0.30; G.camY = G.py - G.H * 0.55;
   G.camZoom = 1; G.targetZoom = 1;
   G.starsAhead = []; G.ringsAhead = []; G.updraftsAhead = []; G.cloudsBg = []; G.trees = [];
@@ -1941,12 +1948,7 @@ function update(realDt){
       }
     }
 
-    // Belly-flop ends run — only catastrophic vertical impact INTO a sharp upslope
-    if (!G.demo && hitVy > 1900 && slope > 0.85){
-      hardImpact(hitVy);
-      setTimeout(endRun, 420);
-      G.running = false;
-    }
+    // No belly-flop death — Tiny Wings only ends via the sun setting (day timer).
 
     // Landing thud + PERFECT SLIDE detection
     if (Math.abs(hitVy) > 200 && !G.prevGroundContact){
@@ -2169,8 +2171,15 @@ function update(realDt){
     else $('#vignette').classList.remove('fast');
   }
 
-  // (Palette is now distance-driven; daytime still ticks slowly only for animation phase like sun rays)
-  G.daytime += realDt * 0.5;
+  // Day timer — the sun is setting. When it touches the horizon, the day ends.
+  if (!G.demo){
+    G.dayTime -= realDt;
+    if (G.dayTime <= 0 && G.running){
+      G.dayTime = 0;
+      sunsetEnd();
+    }
+  }
+  G.daytime += realDt * 0.5;  // for sun-ray rotation animation
   if (G.distance > 80) $('#tip').classList.add('fade');
 
   // Shake decay
@@ -2242,6 +2251,10 @@ function triggerPerfectSlide(slope, hitVy){
   G.perf += 1;
   G.perfStreak += 1;
   G.coins += 4;
+  // Reward: extend the day (cap at maxDayTime so we don't snowball forever)
+  const timeBonus = G.perfStreak >= 3 ? 6.0 : 3.5;
+  G.dayTime = Math.min(G.maxDayTime, G.dayTime + timeBonus);
+  spawnFloatScore('+' + timeBonus.toFixed(1) + 's', G.px, G.py - 50, '#FFD66B');
 
   // Reward speed boost — momentum is preserved + amplified along the slope
   const slopeBoost = Math.min(180, Math.abs(hitVy) * 0.18);
@@ -2299,6 +2312,22 @@ function triggerSpin(){
   showBanner('SPIN!', 'rose');
   kickShake(8);
   A.boom();
+}
+
+/* The sun has set — beautiful day-end moment, then game over */
+function sunsetEnd(){
+  G.running = false;
+  flashScreen(0.55, '#FF8455');
+  kickShake(14);
+  burstAber(0.4);
+  A.boom();
+  // Slow-mo for the moment
+  G.targetTimeScale = 0.18;
+  setTimeout(() => {
+    A.stopMusic();
+    endRun();
+    G.targetTimeScale = 1;
+  }, 1100);
 }
 
 function hardImpact(intensity){
@@ -2543,18 +2572,33 @@ function endRun(){
   else if (dist > 1500)                            eyebrow = 'A SOLID GLIDE';
   $('#gameoverEyebrow').textContent = eyebrow;
 
-  $('#goScore').textContent  = formatNumber(dist);
-  $('#goBest').textContent   = formatNumber(store.best);
+  // Smooth count-up animation for the score (and total coins) — satisfying
+  countTo($('#goScore'), 0, dist, 1100, formatNumber);
+  countTo($('#goBest'),  0, store.best, 1100, formatNumber);
+  countTo($('#goCoins'), 0, G.coinsBanked, 900, v => '+' + v);
+  countTo($('#goTotalCoins'), Math.max(0, store.totalCoins - G.coinsBanked), store.totalCoins, 900, formatNumber);
   $('#goPerf').textContent   = G.perf;
   $('#goFrenzy').textContent = G.frenzyCount;
   $('#goStars').textContent  = G.stars + (G.starsGold > 0 ? ` ★${G.starsGold}` : '');
   $('#goSpeed').textContent  = Math.round(G.topSpeed);
-  $('#goCoins').textContent  = '+' + G.coinsBanked + (G.coinsBanked > G.coins ? ` (×${upCoinMul().toFixed(2)})` : '');
-  $('#goTotalCoins').textContent = formatNumber(store.totalCoins);
   $('#shareLine').textContent = buildShareText();
   $('#pauseHint').classList.add('hidden');
   A.stopMusic();
   showScreen('#gameoverScreen');
+}
+
+/* Smooth tween of a number into a DOM element — satisfying count-up */
+function countTo(el, from, to, durMs, fmt){
+  if (!el) return;
+  const start = performance.now();
+  const ease = (t) => 1 - Math.pow(1 - t, 3);
+  function step(now){
+    const t = Math.min(1, (now - start) / durMs);
+    const v = from + (to - from) * ease(t);
+    el.textContent = (fmt || String)(Math.round(v));
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 
 function buildShareText(){
@@ -2647,7 +2691,15 @@ function draw(dt){
   ctx.scale(G.camZoom, G.camZoom);
   ctx.translate(-G.W/2 + G.shakeX, -G.H/2 + G.shakeY);
 
-  const pal = getPalette();
+  let pal = getPalette();
+  // Day-time → palette warming. Sun warms (redder) as it sets.
+  const dayRatio = clamp(0, 1, (G.dayTime || 1) / (G.maxDayTime || 28));
+  const sunWarm = 1 - dayRatio;
+  pal = {
+    ...pal,
+    glow: lerpHex(pal.glow, '#FF6B3F', sunWarm * 0.55),
+    sBot: lerpHex(pal.sBot, '#FF8455', sunWarm * 0.40),
+  };
 
   // Sky
   const skyGrad = ctx.createLinearGradient(0, 0, 0, G.H);
@@ -2663,9 +2715,10 @@ function draw(dt){
   const auroraStrength = clamp(0, 1, 1 - distToNight * 1.6);
   if (auroraStrength > 0.05) drawAurora(ctx, auroraStrength);
 
-  // Sun/moon halo — bigger, with bloom + speed-coupled lens flare
+  // SUN: position descends as the day ticks down — the visible Tiny Wings timer
   const sunX = G.W * 0.78 - G.camX * 0.02;
-  const sunY = G.H * 0.30 - G.camY * 0.04;
+  // dayRatio 1 = high sky (0.18 of H); dayRatio 0 = touching horizon (0.62 of H)
+  const sunY = G.H * (0.18 + (1 - dayRatio) * 0.44) - G.camY * 0.04;
   const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, G.H * 0.95);
   sunGrad.addColorStop(0, hexA(pal.glow, 0.85));
   sunGrad.addColorStop(0.32, hexA(pal.glow, 0.25));
@@ -2674,15 +2727,29 @@ function draw(dt){
   ctx.fillRect(-200, -200, G.W + 400, G.H + 400);
   // Sun rays
   drawSunRays(ctx, sunX, sunY, pal);
-  // Sun disc — bigger + soft inner glow
+  // Sun disc — bigger as it sets (atmospheric perspective)
+  const sunR = 78 + (1 - dayRatio) * 12;
   ctx.beginPath();
-  ctx.arc(sunX, sunY, 78, 0, TAU);
-  const discGrad = ctx.createRadialGradient(sunX - 14, sunY - 14, 4, sunX, sunY, 78);
+  ctx.arc(sunX, sunY, sunR, 0, TAU);
+  const discGrad = ctx.createRadialGradient(sunX - 14, sunY - 14, 4, sunX, sunY, sunR);
   discGrad.addColorStop(0, '#FFFFFF');
   discGrad.addColorStop(0.55, hexA(pal.glow, 1));
   discGrad.addColorStop(1, hexA(pal.glow, 0.85));
   ctx.fillStyle = discGrad;
   ctx.fill();
+  // Day-time ring HUD around the sun — thin ring that shrinks as time runs out
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, sunR + 14, -Math.PI/2, -Math.PI/2 + TAU * dayRatio);
+  ctx.strokeStyle = hexA(dayRatio < 0.25 ? '#FF6B3F' : pal.glow, 0.85);
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  // Faint full-circle backdrop
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, sunR + 14, 0, TAU);
+  ctx.strokeStyle = hexA(pal.glow, 0.18);
+  ctx.lineWidth = 4;
+  ctx.stroke();
 
   // Lens flare orbs along the camera-to-sun line — pop more at speed
   const flareT = clamp(0, 1, ((G.speedNorm || 0) - 0.2) * 1.8);
