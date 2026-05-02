@@ -1614,8 +1614,9 @@ function resize(){
    Worst-case slope angle ~26° (still rideable). */
 function makeGroundFn(seed){
   const rng = mulberry32(seed);
-  const main = { amp: 200 + rng() * 50, freq: 0.0014 + rng() * 0.0004, phase: rng() * TAU };
-  const med  = { amp: 36  + rng() * 18, freq: 0.0046 + rng() * 0.0014, phase: rng() * TAU };
+  // Sharper main wave — the curvature at apex is what makes natural launches happen
+  const main = { amp: 200 + rng() * 50, freq: 0.0022 + rng() * 0.0006, phase: rng() * TAU };
+  const med  = { amp: 32  + rng() * 18, freq: 0.0058 + rng() * 0.0018, phase: rng() * TAU };
   return (x) => {
     return Math.sin(x * main.freq + main.phase) * main.amp
          + Math.sin(x * med.freq  + med.phase ) * med.amp;
@@ -1891,19 +1892,38 @@ function update(realDt){
   const gy = ground(G.px);
   G.prevGroundContact = G.groundContact;
   if (G.py >= gy){
-    G.groundContact = true;
     const slope = groundSlope(G.px);
     const angle = Math.atan(slope);
     const hitVy = G.vy;
     const tx = Math.cos(angle), ty = Math.sin(angle);
-    const vTan = G.vx * tx + G.vy * ty;
-    // CRITICAL: only apply impact loss on the frame we LAND. Rolling preserves all momentum.
+    const nx = Math.sin(angle), ny = -Math.cos(angle); // away-from-ground normal
+    const vNorm = G.vx * nx + G.vy * ny;               // positive = leaving ground
     const isImpact = !G.prevGroundContact;
-    const loss = isImpact ? BOUNCE_LOSS : 1.0;
-    G.vx = tx * vTan * loss;
-    G.vy = ty * vTan * loss;
-    G.py = gy;
-    // (No explicit slope-gravity term — projection of integrated gravity already gives slope acceleration)
+    if (isImpact){
+      // Hard impact: project onto tangent, take impact loss
+      const vTan = G.vx * tx + G.vy * ty;
+      G.vx = tx * vTan * BOUNCE_LOSS;
+      G.vy = ty * vTan * BOUNCE_LOSS;
+      G.py = gy;
+      G.groundContact = true;
+    } else if (vNorm < 0){
+      // Rolling — bird's velocity has component INTO ground. Kill ONLY that component;
+      // tangent + away-from-ground velocity is preserved. This lets upward momentum
+      // accumulated from rolling up an upslope SURVIVE the apex transition and launch off naturally.
+      G.vx -= vNorm * nx;
+      G.vy -= vNorm * ny;
+      G.py = gy;
+      G.groundContact = true;
+    } else {
+      // Bird is moving AWAY from ground — natural launch off the slope (apex schans-launch).
+      G.groundContact = false;
+      // Run the perfect-launch reward if it qualifies
+      if (slope < PERFECT_SLOPE && Math.hypot(G.vx, G.vy) > PERFECT_SPEED_MIN && G.vy < -120){
+        triggerPerfect();
+      } else {
+        G.perfWindow = COYOTE_TIME;
+      }
+    }
 
     // Belly-flop ends run — only catastrophic vertical impact INTO a sharp upslope
     if (!G.demo && hitVy > 1900 && slope > 0.85){
