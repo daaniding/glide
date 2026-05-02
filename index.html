@@ -1682,9 +1682,11 @@ function newRun({ daily=false, demo=false } = {}){
   G.coins = 0;
   G.coinsAhead = [];
   for (let i = 1; i < 10; i++) tryAddCoin(i * 320);
-  // Reset day timer
+  // Reset day timer + stall state
   G.maxDayTime = 28;
   G.dayTime = G.maxDayTime;
+  G.stallT = 0;
+  G.stalled = false;
   G.camX = G.px - G.W * 0.30; G.camY = G.py - G.H * 0.55;
   G.camZoom = 1; G.targetZoom = 1;
   G.starsAhead = []; G.ringsAhead = []; G.updraftsAhead = []; G.cloudsBg = []; G.trees = [];
@@ -1825,11 +1827,13 @@ function seedSnowfall(){
    • You always have a baseline 220 forward momentum, so you can recover from a bad jump
    • Land cleanly on a downslope = PERFECT SLIDE */
 const GRAVITY            = 1500;
-const GLIDE_GRAV         = 0.22;       // wings out → super floaty, bird drifts (Tiny Wings feel)
-const DIVE_PULL          = 2400;       // dive force unchanged — only press makes you fall fast
-const MAX_VX             = 1500;       // higher ceiling for the rush
-const MIN_VX             = 280;        // baseline forward — never feels stuck
-const START_VX           = 500;        // first wave already flying
+const GLIDE_GRAV         = 0.22;
+const DIVE_PULL          = 2400;
+const MAX_VX             = 1500;
+const MIN_VX             = 0;          // ⚠️  no artificial floor — bird CAN stall on a steep uphill
+const START_VX           = 480;
+const STALL_VX           = 60;         // below this = "stalled"
+const STALL_TIME         = 2.5;        // seconds of stall before the day ends
 const DRAG_AIR_PER_SEC   = 0.04;       // very low forward drag — momentum carries
 const DRAG_VERT_PER_SEC  = 0.18;
 const BOUNCE_LOSS        = 0.94;       // energy loss on impact only
@@ -1903,6 +1907,10 @@ function update(realDt){
   }
 
   if (G.frenzyT > 0) G.vx = Math.min(MAX_VX, G.vx + 200 * dt);
+  // Rolling friction at very low ground speed — kills crawl, lets bird truly stop on a hill
+  if (G.groundContact && G.vx < 120){
+    G.vx *= dragFactor(0.8);
+  }
   G.vx = Math.max(MIN_VX, Math.min(MAX_VX, G.vx));
   G.px += G.vx * dt;
   G.py += G.vy * dt;
@@ -2177,6 +2185,20 @@ function update(realDt){
     if (G.dayTime <= 0 && G.running){
       G.dayTime = 0;
       sunsetEnd();
+    }
+    // Stall detection — bird crawled to a halt on an uphill (or AFK)
+    if (G.vx < STALL_VX && G.airTime < 0.1){
+      G.stallT = (G.stallT || 0) + realDt;
+      // Visual nudge: slow-mo + drain the day faster as the warning
+      if (G.stallT > 0.6){
+        G.dayTime = Math.max(0, G.dayTime - realDt * 2.5);  // sun drops twice as fast while stalled
+      }
+      if (G.stallT >= STALL_TIME && G.running){
+        G.stalled = true;
+        sunsetEnd();
+      }
+    } else {
+      G.stallT = 0;
     }
   }
   G.daytime += realDt * 0.5;  // for sun-ray rotation animation
@@ -2565,8 +2587,9 @@ function endRun(){
   persist();
 
   // Eyebrow message based on result
-  let eyebrow = 'YOU LANDED HARD';
-  if (dist === store.best && dist > 0)             eyebrow = 'NEW PERSONAL BEST';
+  let eyebrow = 'THE SUN HAS SET';
+  if (G.stalled)                                   eyebrow = 'STALLED ON A HILL';
+  else if (dist === store.best && dist > 0)        eyebrow = 'NEW PERSONAL BEST';
   else if (dist > store.best * 0.85 && dist > 100) eyebrow = "INCHES FROM YOUR BEST";
   else if (G.frenzyCount >= 3)                     eyebrow = 'FRENZY MASTER';
   else if (dist > 1500)                            eyebrow = 'A SOLID GLIDE';
